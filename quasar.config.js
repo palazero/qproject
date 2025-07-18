@@ -103,16 +103,73 @@ export default defineConfig((ctx) => {
       // (like functional components as one of the examples),
       // you can manually specify Quasar components/directives to be available everywhere:
       //
-      // components: [],
-      // directives: [],
+      // Auto-import commonly used components
+      components: [
+        'QLayout',
+        'QHeader', 
+        'QDrawer',
+        'QPageContainer',
+        'QPage',
+        'QToolbar',
+        'QToolbarTitle',
+        'QBtn',
+        'QIcon',
+        'QList',
+        'QItem',
+        'QItemSection',
+        'QItemLabel',
+        'QDialog',
+        'QCard',
+        'QCardSection',
+        'QCardActions',
+        'QForm',
+        'QInput',
+        'QSelect',
+        'QCheckbox',
+        'QRadio',
+        'QToggle',
+        'QSlider',
+        'QBanner',
+        'QChip',
+        'QBadge',
+        'QSeparator',
+        'QSpace',
+        'QSpinner',
+        'QLinearProgress',
+        'QCircularProgress',
+        'QMenu',
+        'QTooltip',
+        'QBtnToggle',
+        'QBtnGroup',
+        'QBtnDropdown',
+        'QPageSticky'
+      ],
+      
+      // Auto-import directives
+      directives: [
+        'Ripple',
+        'ClosePopup'
+      ],
 
       // Quasar plugins
-      plugins: []
+      plugins: [
+        'Notify',
+        'Dialog'
+      ]
     },
 
     // animations: 'all', // --- includes all animations
     // https://v2.quasar.dev/options/animations
-    animations: [],
+    animations: [
+      'fadeIn',
+      'fadeOut',
+      'slideInUp',
+      'slideOutDown',
+      'slideInLeft',
+      'slideOutRight',
+      'zoomIn',
+      'zoomOut'
+    ],
 
     // https://v2.quasar.dev/quasar-cli-vite/quasar-config-file#sourcefiles
     // sourceFiles: {

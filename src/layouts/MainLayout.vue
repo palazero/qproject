@@ -12,10 +12,32 @@
         />
 
         <q-toolbar-title>
-          Quasar App
+          任務管理系統
         </q-toolbar-title>
 
-        <div>Quasar v{{ $q.version }}</div>
+        <q-btn
+          flat
+          icon="settings"
+          label="設定"
+        >
+          <q-menu>
+            <q-list style="min-width: 100px">
+              <q-item clickable @click="clearAllData">
+                <q-item-section avatar>
+                  <q-icon name="delete_sweep" />
+                </q-item-section>
+                <q-item-section>清除所有資料</q-item-section>
+              </q-item>
+              
+              <q-item clickable @click="resetSampleData">
+                <q-item-section avatar>
+                  <q-icon name="restore" />
+                </q-item-section>
+                <q-item-section>重置範例資料</q-item-section>
+              </q-item>
+            </q-list>
+          </q-menu>
+        </q-btn>
       </q-toolbar>
     </q-header>
 
@@ -25,17 +47,89 @@
       bordered
     >
       <q-list>
-        <q-item-label
-          header
-        >
-          Essential Links
+        <q-item-label header>
+          主要功能
         </q-item-label>
 
-        <EssentialLink
-          v-for="link in linksList"
-          :key="link.title"
-          v-bind="link"
-        />
+        <q-item
+          clickable
+          :to="{ name: 'task-manager' }"
+          active-class="text-primary"
+        >
+          <q-item-section avatar>
+            <q-icon name="assignment" />
+          </q-item-section>
+          <q-item-section>
+            <q-item-label>任務管理</q-item-label>
+            <q-item-label caption>管理任務和項目</q-item-label>
+          </q-item-section>
+        </q-item>
+
+        <q-separator class="q-my-md" />
+
+        <q-item-label header>
+          快速動作
+        </q-item-label>
+
+        <q-item
+          clickable
+          @click="createNewTask"
+        >
+          <q-item-section avatar>
+            <q-icon name="add" />
+          </q-item-section>
+          <q-item-section>
+            <q-item-label>新增任務</q-item-label>
+          </q-item-section>
+        </q-item>
+
+        <q-item
+          clickable
+          @click="switchToGanttView"
+        >
+          <q-item-section avatar>
+            <q-icon name="timeline" />
+          </q-item-section>
+          <q-item-section>
+            <q-item-label>甘特圖檢視</q-item-label>
+          </q-item-section>
+        </q-item>
+
+        <q-separator class="q-my-md" />
+
+        <q-item-label header>
+          統計資訊
+        </q-item-label>
+
+        <q-item>
+          <q-item-section avatar>
+            <q-icon name="assignment_turned_in" color="positive" />
+          </q-item-section>
+          <q-item-section>
+            <q-item-label>已完成</q-item-label>
+            <q-item-label caption>{{ completedTasksCount }} 個任務</q-item-label>
+          </q-item-section>
+        </q-item>
+
+        <q-item>
+          <q-item-section avatar>
+            <q-icon name="pending" color="warning" />
+          </q-item-section>
+          <q-item-section>
+            <q-item-label>進行中</q-item-label>
+            <q-item-label caption>{{ inProgressTasksCount }} 個任務</q-item-label>
+          </q-item-section>
+        </q-item>
+
+        <q-item>
+          <q-item-section avatar>
+            <q-icon name="schedule" color="grey-6" />
+          </q-item-section>
+          <q-item-section>
+            <q-item-label>待辦</q-item-label>
+            <q-item-label caption>{{ todoTasksCount }} 個任務</q-item-label>
+          </q-item-section>
+        </q-item>
       </q-list>
     </q-drawer>
 
@@ -46,57 +140,80 @@
 </template>
 
 <script setup>
-import { ref } from 'vue'
-import EssentialLink from 'components/EssentialLink.vue'
+import { ref, computed } from 'vue'
+import { useRouter } from 'vue-router'
+import { useTaskStore } from 'src/stores/taskStore'
+import { useQuasar } from 'quasar'
 
-const linksList = [
-  {
-    title: 'Docs',
-    caption: 'quasar.dev',
-    icon: 'school',
-    link: 'https://quasar.dev'
-  },
-  {
-    title: 'Github',
-    caption: 'github.com/quasarframework',
-    icon: 'code',
-    link: 'https://github.com/quasarframework'
-  },
-  {
-    title: 'Discord Chat Channel',
-    caption: 'chat.quasar.dev',
-    icon: 'chat',
-    link: 'https://chat.quasar.dev'
-  },
-  {
-    title: 'Forum',
-    caption: 'forum.quasar.dev',
-    icon: 'record_voice_over',
-    link: 'https://forum.quasar.dev'
-  },
-  {
-    title: 'Twitter',
-    caption: '@quasarframework',
-    icon: 'rss_feed',
-    link: 'https://twitter.quasar.dev'
-  },
-  {
-    title: 'Facebook',
-    caption: '@QuasarFramework',
-    icon: 'public',
-    link: 'https://facebook.quasar.dev'
-  },
-  {
-    title: 'Quasar Awesome',
-    caption: 'Community Quasar projects',
-    icon: 'favorite',
-    link: 'https://awesome.quasar.dev'
-  }
-]
+const router = useRouter()
+const taskStore = useTaskStore()
+const $q = useQuasar()
 
 const leftDrawerOpen = ref(false)
 
-function toggleLeftDrawer () {
+// Computed properties for task statistics
+const completedTasksCount = computed(() => {
+  return taskStore.tasks.filter(task => task.status === 'done').length
+})
+
+const inProgressTasksCount = computed(() => {
+  return taskStore.tasks.filter(task => task.status === 'in_progress').length
+})
+
+const todoTasksCount = computed(() => {
+  return taskStore.tasks.filter(task => task.status === 'todo').length
+})
+
+// Methods
+function toggleLeftDrawer() {
   leftDrawerOpen.value = !leftDrawerOpen.value
+}
+
+function createNewTask() {
+  // Navigate to task manager and trigger new task creation
+  router.push({ name: 'task-manager' })
+  // Trigger create task dialog via store
+  taskStore.triggerCreateTask()
+}
+
+function switchToGanttView() {
+  taskStore.setCurrentView('gantt')
+  router.push({ name: 'task-manager' })
+}
+
+function clearAllData() {
+  $q.dialog({
+    title: '確認清除',
+    message: '這將刪除所有任務資料，此動作無法復原。確定要繼續嗎？',
+    cancel: true,
+    persistent: true,
+    color: 'negative'
+  }).onOk(() => {
+    localStorage.removeItem('task-manager-data')
+    taskStore.$reset()
+    $q.notify({
+      message: '所有資料已清除',
+      color: 'info',
+      icon: 'delete_sweep'
+    })
+  })
+}
+
+function resetSampleData() {
+  $q.dialog({
+    title: '重置範例資料',
+    message: '這將清除現有資料並載入範例任務。確定要繼續嗎？',
+    cancel: true,
+    persistent: true
+  }).onOk(() => {
+    localStorage.removeItem('task-manager-data')
+    taskStore.$reset()
+    taskStore.initializeSampleData()
+    $q.notify({
+      message: '範例資料已重置',
+      color: 'positive',
+      icon: 'restore'
+    })
+  })
 }
 </script>
