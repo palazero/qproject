@@ -20,6 +20,7 @@
     "dhtmlx-gantt": "^9.0.13",
     "pinia": "^3.0.1",
     "quasar": "^2.16.0",
+    "socket.io-client": "^4.8.1",
     "uuid": "^11.1.0",
     "vue": "^3.4.18",
     "vue-i18n": "^11.0.0",

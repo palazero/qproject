@@ -1,5 +1,7 @@
 import { defineStore } from 'pinia'
 import { v4 as uuidv4 } from 'uuid'
+import { api } from 'src/boot/axios'
+import { io } from 'socket.io-client'
 
 const STORAGE_KEY = 'task-manager-data'
 
@@ -60,6 +62,15 @@ export const useTaskStore = defineStore('task', {
       assignee: null,
       dateRange: null,
     },
+    
+    // Backend integration state
+    isOnline: navigator.onLine,
+    syncStatus: 'idle', // 'idle', 'syncing', 'error'
+    pendingActions: [], // 離線時的待同步操作
+    currentProjectId: null,
+    currentUser: null,
+    socket: null,
+    authToken: localStorage.getItem('auth_token'),
   }),
 
   getters: {
@@ -225,10 +236,189 @@ export const useTaskStore = defineStore('task', {
   },
 
   actions: {
-    // Create new task
-    createTask(taskData) {
+    // Initialize backend connection
+    async initializeBackend(projectId, userToken) {
+      this.currentProjectId = projectId;
+      this.authToken = userToken;
+      
+      if (userToken) {
+        localStorage.setItem('auth_token', userToken);
+      }
+      
+      // Initialize Socket.io
+      if (userToken) {
+        this.socket = io(process.env.VUE_APP_API_URL?.replace('/api', '') || 'http://localhost:3000', {
+          auth: { token: userToken }
+        });
+
+        this.socket.on('connect', () => {
+          this.isOnline = true;
+          if (projectId) {
+            this.socket.emit('join:project', projectId);
+          }
+          this.syncPendingActions();
+        });
+
+        this.socket.on('task:sync', (event) => {
+          this.handleRealtimeSync(event);
+        });
+
+        this.socket.on('disconnect', () => {
+          this.isOnline = false;
+        });
+      }
+
+      // Load initial data
+      if (projectId) {
+        await this.loadTasksFromServer();
+      }
+      
+      // Monitor network status
+      this.initializeNetworkMonitoring();
+    },
+
+    // Load tasks from server
+    async loadTasksFromServer() {
+      if (!this.authToken) return;
+      
+      try {
+        this.syncStatus = 'syncing';
+        
+        const response = await api.get('/tasks', {
+          params: { 
+            project_id: this.currentProjectId,
+            since: this.lastUpdated 
+          }
+        });
+
+        this.tasks = response.data;
+        this.lastUpdated = new Date().toISOString();
+        this.syncStatus = 'idle';
+        
+        // Update local cache
+        this.saveToLocalStorage();
+        
+      } catch (error) {
+        console.warn('載入任務失敗，使用本地快取:', error);
+        this.loadFromLocalStorage();
+        this.syncStatus = 'error';
+      }
+    },
+
+    // Save to local storage
+    saveToLocalStorage() {
+      const dataToStore = {
+        tasks: this.tasks,
+        links: this.links,
+        tags: this.tags,
+        lastUpdated: this.lastUpdated,
+      };
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(dataToStore));
+    },
+
+    // Load from local storage
+    loadFromLocalStorage() {
+      const stored = localStorage.getItem(STORAGE_KEY);
+      if (stored) {
+        try {
+          const data = JSON.parse(stored);
+          this.tasks = data.tasks || [];
+          this.links = data.links || [];
+          this.tags = data.tags || ['UI', 'Backend', 'Testing', 'Documentation'];
+          this.lastUpdated = data.lastUpdated;
+        } catch (e) {
+          console.warn('Failed to load stored data:', e);
+        }
+      }
+    },
+
+    // Network monitoring
+    initializeNetworkMonitoring() {
+      window.addEventListener('online', () => {
+        this.isOnline = true;
+        this.syncPendingActions();
+      });
+
+      window.addEventListener('offline', () => {
+        this.isOnline = false;
+      });
+    },
+
+    // Handle realtime sync
+    handleRealtimeSync(event) {
+      const { type, task, userId } = event;
+
+      // Ignore own operations
+      if (userId === this.currentUser?.id) return;
+
+      switch (type) {
+        case 'created':
+          if (!this.tasks.find(t => t.id === task.id)) {
+            this.tasks.push(task);
+          }
+          break;
+        case 'updated':
+          const index = this.tasks.findIndex(t => t.id === task.id);
+          if (index !== -1) {
+            this.tasks[index] = task;
+          }
+          break;
+        case 'deleted':
+          this.tasks = this.tasks.filter(t => t.id !== task.id);
+          break;
+      }
+
+      this.updateTaskLinks();
+    },
+
+    // Sync pending actions
+    async syncPendingActions() {
+      if (!this.isOnline || this.pendingActions.length === 0) return;
+
+      const actionsToSync = [...this.pendingActions];
+      this.pendingActions = [];
+
+      for (const action of actionsToSync) {
+        try {
+          await this.executeSyncAction(action);
+        } catch (error) {
+          this.pendingActions.push(action);
+        }
+      }
+
+      if (actionsToSync.length > 0) {
+        await this.loadTasksFromServer();
+      }
+    },
+
+    // Execute sync action
+    async executeSyncAction(action) {
+      switch (action.type) {
+        case 'create':
+          const response = await api.post('/tasks', {
+            ...action.data,
+            project_id: this.currentProjectId
+          });
+          
+          // Replace temp task
+          this.tasks = this.tasks.filter(t => t.id !== action.tempId);
+          break;
+
+        case 'update':
+          await api.put(`/tasks/${action.taskId}`, action.data);
+          break;
+
+        case 'delete':
+          await api.delete(`/tasks/${action.taskId}`);
+          break;
+      }
+    },
+
+    // Create new task (updated for backend)
+    async createTask(taskData) {
+      const tempId = uuidv4();
       const newTask = {
-        id: uuidv4(),
+        id: tempId,
         parentId: taskData.parentId || null,
         title: taskData.title || 'New Task',
         description: taskData.description || '',
@@ -242,46 +432,114 @@ export const useTaskStore = defineStore('task', {
         sortOrder: taskData.sortOrder || this.getNextSortOrder(taskData.parentId),
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
+        _isTemp: true
       }
 
-      this.tasks.push(newTask)
-      this.updateTaskLinks()
-      return newTask
+      // Optimistic update UI
+      this.tasks.push(newTask);
+
+      if (this.isOnline && this.authToken) {
+        try {
+          const response = await api.post('/tasks', {
+            ...taskData,
+            project_id: this.currentProjectId
+          });
+
+          // Replace temp task
+          const index = this.tasks.findIndex(t => t.id === tempId);
+          if (index !== -1) {
+            this.tasks[index] = response.data;
+          }
+
+        } catch (error) {
+          this.pendingActions.push({
+            type: 'create',
+            data: taskData,
+            tempId
+          });
+        }
+      } else {
+        this.pendingActions.push({
+          type: 'create',
+          data: taskData,
+          tempId
+        });
+      }
+
+      this.updateTaskLinks();
+      return newTask;
     },
 
-    // Update existing task
-    updateTask(taskId, updates) {
+    // Update existing task (updated for backend)
+    async updateTask(taskId, updates) {
       const index = this.tasks.findIndex((task) => task.id === taskId)
-      if (index !== -1) {
-        // Validate dependencies if they are being updated
-        if (updates.dependencies) {
-          if (this.hasCircularDependency(taskId, updates.dependencies)) {
-            throw new Error('無法建立循環依賴關係')
+      if (index === -1) return;
+
+      // Validate dependencies if they are being updated
+      if (updates.dependencies) {
+        if (this.hasCircularDependency(taskId, updates.dependencies)) {
+          throw new Error('無法建立循環依賴關係')
+        }
+      }
+
+      // Validate status change
+      if (updates.status === 'done' && !this.canMarkAsDone(taskId)) {
+        throw new Error('無法標記為完成：仍有未完成的依賴任務')
+      }
+
+      const originalTask = { ...this.tasks[index] };
+      
+      // Optimistic update
+      this.tasks[index] = {
+        ...originalTask,
+        ...updates,
+        updatedAt: new Date().toISOString()
+      };
+
+      if (this.isOnline && this.authToken) {
+        try {
+          const response = await api.put(`/tasks/${taskId}`, {
+            ...updates,
+            version: originalTask.version
+          });
+
+          this.tasks[index] = response.data;
+
+        } catch (error) {
+          if (error.response?.status === 409) {
+            // Version conflict - server wins for simplicity
+            await this.loadTasksFromServer();
+          } else {
+            // Rollback and queue for later
+            this.tasks[index] = originalTask;
+            this.pendingActions.push({
+              type: 'update',
+              taskId,
+              data: updates
+            });
           }
         }
-
-        // Validate status change
-        if (updates.status === 'done' && !this.canMarkAsDone(taskId)) {
-          throw new Error('無法標記為完成：仍有未完成的依賴任務')
-        }
-
-        this.tasks[index] = {
-          ...this.tasks[index],
-          ...updates,
-          updatedAt: new Date().toISOString(),
-        }
-
-        // Auto-block dependent tasks if this task is blocked
-        if (updates.status === 'blocked') {
-          this.autoBlockDependentTasks(taskId)
-        }
-
-        this.updateTaskLinks()
+      } else {
+        this.pendingActions.push({
+          type: 'update',
+          taskId,
+          data: updates
+        });
       }
+
+      // Auto-block dependent tasks if this task is blocked
+      if (updates.status === 'blocked') {
+        this.autoBlockDependentTasks(taskId)
+      }
+
+      this.updateTaskLinks();
     },
 
-    // Delete task and its children
-    deleteTask(taskId) {
+    // Delete task and its children (updated for backend)
+    async deleteTask(taskId) {
+      const taskToDelete = this.tasks.find(t => t.id === taskId);
+      if (!taskToDelete) return;
+
       const deleteRecursive = (id) => {
         // Delete children first
         const children = this.tasks.filter((task) => task.parentId === id)
@@ -296,8 +554,28 @@ export const useTaskStore = defineStore('task', {
         })
       }
 
-      deleteRecursive(taskId)
-      this.updateTaskLinks()
+      // Optimistic delete
+      deleteRecursive(taskId);
+
+      if (this.isOnline && this.authToken) {
+        try {
+          await api.delete(`/tasks/${taskId}`);
+        } catch (error) {
+          // Restore task on error
+          this.tasks.push(taskToDelete);
+          this.pendingActions.push({
+            type: 'delete',
+            taskId
+          });
+        }
+      } else {
+        this.pendingActions.push({
+          type: 'delete',
+          taskId
+        });
+      }
+
+      this.updateTaskLinks();
     },
 
     // Update task order after drag and drop

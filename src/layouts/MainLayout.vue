@@ -15,6 +15,60 @@
           任務管理系統
         </q-toolbar-title>
 
+        <!-- User info and auth buttons -->
+        <div class="row items-center q-gutter-sm">
+          <!-- Sync status indicator -->
+          <q-chip 
+            v-if="taskStore.authToken"
+            :icon="syncStatusIcon" 
+            :color="syncStatusColor"
+            size="sm"
+            :title="syncStatusText"
+          >
+            {{ syncStatusText }}
+          </q-chip>
+
+          <!-- User menu -->
+          <q-btn
+            v-if="authStore.isAuthenticated"
+            flat
+            icon="account_circle"
+            :label="authStore.userDisplayName"
+          >
+            <q-menu>
+              <q-list style="min-width: 200px">
+                <q-item>
+                  <q-item-section avatar>
+                    <q-icon name="person" />
+                  </q-item-section>
+                  <q-item-section>
+                    <q-item-label>{{ authStore.userDisplayName }}</q-item-label>
+                    <q-item-label caption>{{ authStore.user?.email }}</q-item-label>
+                  </q-item-section>
+                </q-item>
+                
+                <q-separator />
+                
+                <q-item clickable @click="logout">
+                  <q-item-section avatar>
+                    <q-icon name="logout" />
+                  </q-item-section>
+                  <q-item-section>登出</q-item-section>
+                </q-item>
+              </q-list>
+            </q-menu>
+          </q-btn>
+
+          <!-- Login button for non-authenticated users -->
+          <q-btn
+            v-else
+            flat
+            icon="login"
+            label="登入"
+            @click="goToLogin"
+          />
+        </div>
+
         <q-btn
           flat
           icon="settings"
@@ -143,10 +197,12 @@
 import { ref, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { useTaskStore } from 'src/stores/taskStore'
+import { useAuthStore } from 'src/stores/authStore'
 import { useQuasar } from 'quasar'
 
 const router = useRouter()
 const taskStore = useTaskStore()
+const authStore = useAuthStore()
 const $q = useQuasar()
 
 const leftDrawerOpen = ref(false)
@@ -162,6 +218,31 @@ const inProgressTasksCount = computed(() => {
 
 const todoTasksCount = computed(() => {
   return taskStore.tasks.filter(task => task.status === 'todo').length
+})
+
+// Sync status computed properties
+const syncStatusIcon = computed(() => {
+  switch (taskStore.syncStatus) {
+    case 'syncing': return 'sync'
+    case 'error': return 'sync_problem'
+    default: return taskStore.isOnline ? 'cloud_done' : 'cloud_off'
+  }
+})
+
+const syncStatusColor = computed(() => {
+  switch (taskStore.syncStatus) {
+    case 'syncing': return 'primary'
+    case 'error': return 'negative'
+    default: return taskStore.isOnline ? 'positive' : 'warning'
+  }
+})
+
+const syncStatusText = computed(() => {
+  switch (taskStore.syncStatus) {
+    case 'syncing': return '同步中'
+    case 'error': return '同步錯誤'
+    default: return taskStore.isOnline ? '已連線' : '離線'
+  }
 })
 
 // Methods
@@ -214,6 +295,28 @@ function resetSampleData() {
       color: 'positive',
       icon: 'restore'
     })
+  })
+}
+
+// Auth related methods
+function goToLogin() {
+  router.push('/login')
+}
+
+async function logout() {
+  $q.dialog({
+    title: '確認登出',
+    message: '確定要登出嗎？',
+    cancel: true,
+    persistent: true
+  }).onOk(async () => {
+    await authStore.logout()
+    $q.notify({
+      message: '已成功登出',
+      color: 'info',
+      icon: 'logout'
+    })
+    router.push('/login')
   })
 }
 </script>
