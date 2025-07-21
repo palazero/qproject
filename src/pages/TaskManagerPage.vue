@@ -100,9 +100,6 @@
       <div v-show="currentView === 'list'" class="list-view">
         <!-- List Controls (Fixed) -->
         <div v-if="displayTasks.length > 0" class="list-controls q-pa-xs bg-grey-1 row justify-between items-center">
-          <div class="text-body2 text-grey-8">
-            任務清單 ({{ taskStats.total }} 個任務)
-          </div>
           <div class="row q-gutter-xs">
             <q-btn
               flat
@@ -126,6 +123,9 @@
             >
               <q-tooltip v-if="$q.screen.xs">全部縮合</q-tooltip>
             </q-btn>
+          </div>
+          <div class="text-body2 text-grey-8">
+            任務清單 ({{ taskStats.total }} 個任務)
           </div>
         </div>
 
