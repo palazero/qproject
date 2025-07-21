@@ -25,7 +25,7 @@
       :model-value="isSelected"
       @update:model-value="toggleSelection"
       class="select-checkbox"
-      size="sm"
+      size="xs"
     />
 
     <!-- Single compact row (only縮排內容) -->
@@ -285,7 +285,7 @@ export default {
         event.stopPropagation()
         event.preventDefault()
       }
-      
+
       if (hasChildren.value) {
         // If task has children, toggle expand/collapse
         emit('toggle-expand', props.task.id)
@@ -475,10 +475,9 @@ export default {
   color: #999;
   transition: color 0.2s ease;
   font-size: 12px;
-  width: 14px;
-  height: 14px;
+  width: 16px;
+  height: 16px;
   padding: 0;
-  margin-right: 1px;
 }
 
 .drag-handle:hover {

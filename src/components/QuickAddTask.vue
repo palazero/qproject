@@ -115,7 +115,7 @@ export default {
       taskTitle.value = ''
     }
 
-    const addTask = () => {
+    const addTask = async () => {
       if (!taskTitle.value.trim()) return
 
       // Create new task
@@ -135,9 +135,15 @@ export default {
       taskStore.createTask(newTask)
       emit('task-added', newTask)
 
-      // Reset
+      // Reset title but keep active for next task
       taskTitle.value = ''
-      isActive.value = false
+      // 保持 isActive.value = true，繼續準備下一個任務輸入
+      
+      // 重新聚焦到輸入框
+      await nextTick()
+      if (inputRef.value) {
+        inputRef.value.focus()
+      }
     }
 
     const onBlur = () => {
