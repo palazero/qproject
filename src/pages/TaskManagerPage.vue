@@ -158,8 +158,10 @@
       <div v-show="currentView === 'gantt'" class="gantt-view">
         <GanttView
           ref="ganttRef"
+          :filters="filters"
           @task-updated="onGanttTaskUpdated"
           @task-edit="editTask"
+          @task-create="showAddTask"
         />
       </div>
     </div>
@@ -215,6 +217,7 @@ export default {
     const editingTaskId = ref(null)
     const editingParentId = ref(null)
     const searchText = ref('')
+    const filters = ref({})
 
     // Current view from store
     const currentView = computed({
@@ -376,8 +379,18 @@ export default {
     }
 
     // Event handlers
-    const onFilterChange = ({ searchText: search }) => {
-      searchText.value = search || ''
+    const onFilterChange = (data) => {
+      // 保留原有的搜尋文字處理
+      if (data.searchText !== undefined) {
+        searchText.value = data.searchText || ''
+      }
+      
+      // 更新過濾器狀態，供 GanttView 使用 - 包含 searchText
+      filters.value = { 
+        ...data.filters,
+        searchText: data.searchText || ''
+      }
+      console.log('Filter change received:', data, 'Updated filters:', filters.value)
     }
 
     const onTaskSaved = () => {
@@ -545,6 +558,7 @@ export default {
       editingTaskId,
       editingParentId,
       searchText,
+      filters,
 
       // Computed
       currentView,

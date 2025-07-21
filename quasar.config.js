@@ -59,7 +59,12 @@ export default defineConfig((ctx) => {
       // polyfillModulePreload: true,
       // distDir
 
-      // extendViteConf (viteConf) {},
+      extendViteConf (viteConf) {
+        // 配置 dhtmlx-gantt 優化依賴
+        viteConf.optimizeDeps = viteConf.optimizeDeps || {}
+        viteConf.optimizeDeps.include = viteConf.optimizeDeps.include || []
+        viteConf.optimizeDeps.include.push('dhtmlx-gantt')
+      },
       // viteVuePluginOptions: {},
       
       vitePlugins: [

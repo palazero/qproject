@@ -75,10 +75,56 @@
       </div>
 
       <div class="toolbar-section">
-        <span class="text-caption text-grey-6">
-          提示：雙擊空白區域或右鍵點擊新增任務
-        </span>
+        <q-btn
+          flat
+          dense
+          size="sm"
+          icon="help_outline"
+          color="grey-6"
+          @click="showKeyboardShortcuts = true"
+        >
+          <q-tooltip>鍵盤快捷鍵</q-tooltip>
+        </q-btn>
       </div>
+
+    <!-- 鍵盤快捷鍵對話框 -->
+    <q-dialog v-model="showKeyboardShortcuts">
+      <q-card style="min-width: 350px">
+        <q-card-section>
+          <div class="text-h6">Keyboard shortcuts:</div>
+          <div>
+            <p><b>Global</b></p>
+            <ul>
+              <li><b>Tab</b> - select gantt</li>
+              <li><b>Alt + Up/Down/Left/Right</b> - scroll gantt</li>
+              <li><b>Ctrl + Enter</b> - create new task</li>
+              <li><b>Ctrl + Z</b> - undo</li>
+              <li><b>Ctrl + R</b> - redo</li>
+            </ul>
+            <p><b>Header Cells</b></p>
+            <ul>
+              <li><b>Left/Right</b> - navigate over cells</li>
+              <li><b>Home/End</b> - navigate to the first/last column</li>
+              <li><b>Down</b> - navigate to task rows</li>
+              <li><b>Space/Enter</b> - click header</li>
+            </ul>
+            <p><b>Task rows</b></p>
+            <ul>
+              <li><b>Up/Down</b> - navigate rows</li>
+              <li><b>PageDown/PageUp</b> - navigate to the first/last task</li>
+              <li><b>Space</b> - select task</li>
+              <li><b>Ctrl + Enter</b> - create new task</li>
+              <li><b>Delete</b> - delete selected task</li>
+              <li><b>Enter</b> - open the lightbox</li>
+              <li><b>Ctrl + Left/Right</b> - expand, collapse tree</li>
+            </ul>
+          </div>
+        </q-card-section>
+        <q-card-actions align="right">
+          <q-btn flat label="關閉" color="primary" v-close-popup />
+        </q-card-actions>
+      </q-card>
+    </q-dialog>
     </div>
 
     <!-- 甘特圖容器 -->
@@ -89,19 +135,28 @@
 <script>
 import { onMounted, onBeforeUnmount, ref, watch, computed } from 'vue'
 import { useTaskStore } from 'src/stores/taskStore'
-import gantt from 'dhtmlx-gantt'
+import { gantt } from 'dhtmlx-gantt'
 import 'dhtmlx-gantt/codebase/dhtmlxgantt.css'
 
 export default {
   name: 'GanttView',
 
-  emits: ['task-edit'],
+  props: {
+    filters: {
+      type: Object,
+      default: () => ({})
+    }
+  },
+
+  emits: ['task-edit', 'task-create'],
 
   setup(props, { emit }) {
     const ganttContainer = ref(null)
     const taskStore = useTaskStore()
+    const showKeyboardShortcuts = ref(false)
 
     let ganttInstance = null
+    let filterEventId = null
 
     // Get gantt data from store
     const ganttData = computed(() => taskStore.ganttData)
@@ -115,6 +170,13 @@ export default {
     })
 
     const initializeGantt = () => {
+      if (!ganttContainer.value) {
+        console.error('Gantt container not ready')
+        return
+      }
+
+      console.log('Initializing Gantt chart...')
+
       // Configure Gantt - 使用新的配置方式
       gantt.config.date_format = '%Y-%m-%d %H:%i'
 
@@ -134,33 +196,76 @@ export default {
       gantt.config.start_date = null
       gantt.config.end_date = null
 
-      // Configure columns
-      gantt.config.columns = [
-        { name: 'text', label: '任務名稱', width: 200, tree: true },
-        { name: 'start_date', label: '開始日期', width: 100, align: 'center' },
-        { name: 'duration', label: '工期', width: 60, align: 'center' },
-        { name: 'progress', label: '進度', width: 80, align: 'center' }
+      // 定義自訂編輯器選項
+      const statusOptions = [
+        { key: 'todo', label: '待辦' },
+        { key: 'in_progress', label: '進行中' },
+        { key: 'done', label: '已完成' },
+        { key: 'blocked', label: '阻塞' }
       ]
 
-      // 啟用滑鼠拖拉滾動功能
-      gantt.config.preserve_scroll = true
-      gantt.config.scroll_on_load = true
-      gantt.config.touch = true
-      gantt.config.touch_drag = true
+      // Configure columns with inline editors
+      gantt.config.columns = [
+        {
+          name: 'text',
+          label: '任務名稱',
+          width: 200,
+          tree: true,
+          editor: { type: 'text', map_to: 'text' }
+        },
+        {
+          name: 'start_date',
+          label: '開始日期',
+          width: 100,
+          align: 'center',
+          editor: { type: 'date', map_to: 'start_date' }
+        },
+        {
+          name: 'status',
+          label: '狀態',
+          width: 90,
+          align: 'center',
+          editor: {
+            type: 'select',
+            map_to: 'status',
+            options: statusOptions
+          },
+          template: function(task) {
+            const option = statusOptions.find(opt => opt.key === task.status)
+            return option ? option.label : task.status
+          }
+        },
+        {
+          name: 'assignee',
+          label: '執行人',
+          width: 120,
+          align: 'center',
+          editor: { type: 'text', map_to: 'assignee' },
+          template: function(task) {
+            return task.assignee || '未指派'
+          }
+        }
+      ]
+
+      gantt.config.preserve_scroll = true // 確保重繪時不會丟失滾動位置
+      gantt.config.scroll_on_load = true // 確保載入時不會丟失滾動位置
+      gantt.config.touch = true // 啟用觸控支持
+      gantt.config.touch_drag = true // 啟用觸控拖動支持
+      gantt.config.sort = true // 啟用排序功能
 
       // 啟用樹狀結構顯示
       gantt.config.open_tree_initially = true // 預設展開
-      gantt.config.branch_loading = false
-      gantt.config.show_task_cells = true
+      gantt.config.branch_loading = false // 禁用分支加載(PRO版功能)
+      gantt.config.show_task_cells = true // displaying column borders in the chart area
+
+      // Inline 編輯配置
+      gantt.config.inline_editors_multiselect_open = false // 禁用多選時打開編輯器
+      gantt.config.inline_editors_date_format = '%Y-%m-%d' // 日期格式
 
       // Enable drag and drop - 但先暫時禁用 links 相關功能
       gantt.config.drag_links = false // 暫時禁用以避免錯誤
-      gantt.config.drag_progress = true
-      gantt.config.drag_resize = true
-      gantt.config.keyboard_navigation = true
-
-      // 啟用雙擊新增任務
-      gantt.config.dblclick_create = true
+      gantt.config.drag_progress = true // 啟用拖動進度條
+      gantt.config.drag_resize = true // 啟用拖動調整任務長度
 
       // 禁用內建的 lightbox 編輯器，使用我們自己的對話框
       gantt.config.lightbox.sections = []
@@ -220,18 +325,27 @@ export default {
       }
 
       gantt.plugins({
-        drag_timeline: true,
-        tooltip: true,
-        undo: true,
-        marker: true
+        drag_timeline: true, // 啟用拖動時間軸插件
+        tooltip: true, // 啟用 tooltip 插件
+        undo: true, // 啟用 undo 插件
+        marker: true, // 啟用 marker 插件
+        keyboard_navigation: true, // 啟用鍵盤導航
+        inline_editors: true // 啟用 inline 編輯器插件
       })
 
+      // 自定義 tooltip 模板
+      gantt.templates.tooltip_text = (start, end, task) =>
+        `<b>任務:</b> ${task.text}<br/>
+        <b>描述:</b> ${task.description || '無描述'}<br/>
+        <b>執行人:</b> ${task.assignee || '未指定'}<br/>
+        <b>狀態:</b> ${task.status || '未指定'}`
+
       // Initialize gantt
-      ganttInstance = gantt.init(ganttContainer.value)
+      gantt.init(ganttContainer.value)
+      ganttInstance = true // 標記為已初始化
 
       // Load initial data with debug logging
       const data = ganttData.value
-      console.log('Loading Gantt data:', data)
 
       if (data && data.data && data.data.length > 0) {
         // 暫時只載入任務數據，不載入 links
@@ -260,6 +374,9 @@ export default {
 
       // Event handlers
       setupEventHandlers()
+
+      // Setup filtering
+      setupFiltering()
     }
 
     // Helper function to convert Gantt date to local datetime string
@@ -278,15 +395,46 @@ export default {
 
     // Setup event handlers
     const setupEventHandlers = () => {
-      // Task updated event
+      // Task updated event (包括 inline 編輯)
       gantt.attachEvent('onAfterTaskUpdate', (id, item) => {
         const task = taskStore.getTaskById(id)
         if (task) {
-          taskStore.updateTask(id, {
+          const updateData = {
             title: item.text,
             startTime: item.start_date ? getLocalDateTimeString(item.start_date) : null,
             endTime: item.end_date ? getLocalDateTimeString(item.end_date) : null
-          })
+          }
+
+          // 如果有 duration 變更，計算結束時間
+          if (item.duration && item.start_date) {
+            const endDate = new Date(item.start_date)
+            endDate.setDate(endDate.getDate() + item.duration)
+            updateData.endTime = getLocalDateTimeString(endDate)
+          }
+
+          // 如果有 progress 變更，更新狀態
+          if (item.progress !== undefined) {
+            let status = 'todo'
+            if (item.progress >= 1) status = 'done'
+            else if (item.progress > 0) status = 'in_progress'
+            updateData.status = status
+          }
+
+          // 直接更新狀態和優先級
+          if (item.status) {
+            updateData.status = item.status
+          }
+
+          if (item.priority) {
+            updateData.priority = item.priority
+          }
+
+          if (item.assignee !== undefined) {
+            updateData.assignee = item.assignee || ''
+          }
+
+          console.log('Updating task via inline edit:', id, updateData)
+          taskStore.updateTask(id, updateData)
         }
       })
 
@@ -302,40 +450,6 @@ export default {
         }
       })
 
-      // Link created event
-      gantt.attachEvent('onAfterLinkAdd', (id, link) => {
-        if (!link || !link.source || !link.target) {
-          console.warn('Invalid link data:', link)
-          return
-        }
-
-        const sourceTask = taskStore.getTaskById(link.source)
-        const targetTask = taskStore.getTaskById(link.target)
-
-        if (sourceTask && targetTask) {
-          // Add dependency to target task
-          const dependencies = [...(targetTask.dependencies || [])]
-          if (!dependencies.includes(link.source)) {
-            dependencies.push(link.source)
-            taskStore.updateTask(link.target, { dependencies })
-          }
-        }
-      })
-
-      // Link deleted event
-      gantt.attachEvent('onAfterLinkDelete', (id, link) => {
-        if (!link || !link.target) {
-          console.warn('Invalid link data for deletion:', link)
-          return
-        }
-
-        const targetTask = taskStore.getTaskById(link.target)
-        if (targetTask && targetTask.dependencies) {
-          const dependencies = targetTask.dependencies.filter(dep => dep !== link.source)
-          taskStore.updateTask(link.target, { dependencies })
-        }
-      })
-
       // Task double click for editing
       gantt.attachEvent('onTaskDblClick', (id) => {
         // Emit event to parent component to open edit dialog
@@ -343,15 +457,20 @@ export default {
         return false // Prevent default gantt edit
       })
 
-      // Task creation
+      // Task creation - 發送事件
       gantt.attachEvent('onAfterTaskAdd', (id, item) => {
-        // Create new task in store
-        taskStore.createTask({
-          title: item.text || 'New Task',
+        // 立即刪除甘特圖中的任務，防止未確認的任務顯示
+        gantt.deleteTask(id, false) // false = 不觸發 onAfterTaskDelete 事件
+
+        // 發送創建事件給父組件處理
+        const taskData = {
+          title: item.text || '新任務',
           startTime: item.start_date ? getLocalDateTimeString(item.start_date) : null,
           endTime: item.end_date ? getLocalDateTimeString(item.end_date) : null,
           parentId: item.parent !== '0' ? item.parent : null
-        })
+        }
+        emit('task-create', taskData)
+        return false // 阻止預設行為
       })
 
       // Task deletion
@@ -386,23 +505,15 @@ export default {
 
     // 創建快速任務的統一函數
     const createQuickTask = (startDate) => {
-      const newTaskId = 'quick_' + Date.now()
-      const newTask = {
-        id: newTaskId,
-        text: '新任務 - 請編輯',
-        start_date: startDate,
-        duration: 1,
-        progress: 0,
-        parent: 0
+      // 直接打開編輯對話框來新增任務，不預先加入甘特圖
+      const tempTaskData = {
+        startTime: getLocalDateTimeString(startDate),
+        endTime: getLocalDateTimeString(new Date(startDate.getTime() + 24 * 60 * 60 * 1000)), // +1 day
+        title: '新任務',
+        parentId: null
       }
-
-      // 添加到甘特圖並立即編輯
-      gantt.addTask(newTask)
-      setTimeout(() => {
-        gantt.selectTask(newTaskId)
-        // 使用我們的編輯對話框而不是內建lightbox
-        emit('task-edit', newTaskId)
-      }, 100)
+      // 發送新增事件給父組件處理
+      emit('task-create', tempTaskData)
     }
 
     // 顯示右鍵選單
@@ -436,7 +547,9 @@ export default {
       addTaskOption.onclick = () => {
         const date = gantt.dateFromPos(e.offsetX - gantt.config.grid_width)
         createQuickTask(date || new Date())
-        document.body.removeChild(menu)
+        if (menu.parentNode) {
+          document.body.removeChild(menu)
+        }
       }
 
       menu.appendChild(addTaskOption)
@@ -445,7 +558,9 @@ export default {
       // 點擊外部關閉選單
       const closeMenu = (e) => {
         if (!menu.contains(e.target)) {
-          document.body.removeChild(menu)
+          if (menu.parentNode) {
+            document.body.removeChild(menu)
+          }
           document.removeEventListener('click', closeMenu)
         }
       }
@@ -455,11 +570,156 @@ export default {
       }, 100)
     }
 
+    // Setup filtering functionality
+    const setupFiltering = () => {
+      console.log('Setting up filtering...')
+
+      // 先移除可能存在的舊事件
+      if (filterEventId) {
+        gantt.detachEvent(filterEventId)
+      }
+
+      filterEventId = gantt.attachEvent('onBeforeTaskDisplay', (id) => {
+        const taskData = taskStore.getTaskById(id)
+        if (!taskData) {
+          console.log('No task data found for id:', id)
+          return true // 如果找不到任務資料，顯示任務
+        }
+
+        const filters = props.filters || {}
+
+        // searchText filter - 搜尋標題和描述
+        if (filters.searchText && filters.searchText.trim()) {
+          const search = filters.searchText.toLowerCase().trim()
+          const matchTitle = taskData.title && taskData.title.toLowerCase().includes(search)
+          const matchDescription = taskData.description && taskData.description.toLowerCase().includes(search)
+          const matchAssignee = taskData.assignee && taskData.assignee.toLowerCase().includes(search)
+
+          if (!matchTitle && !matchDescription && !matchAssignee) {
+            console.log('Task', id, 'filtered out by search:', search)
+            return false
+          }
+        }
+
+        // Status filter
+        if (filters.status && taskData.status !== filters.status) {
+          return false
+        }
+
+        // Priority filter
+        if (filters.priority && taskData.priority !== filters.priority) {
+          return false
+        }
+
+        // Tags filter
+        if (filters.tags && filters.tags.length > 0) {
+          const taskTags = taskData.tags || []
+          const hasMatchingTag = filters.tags.some(tag => taskTags.includes(tag))
+          if (!hasMatchingTag) {
+            return false
+          }
+        }
+
+        // Assignee filter
+        if (filters.assignee && taskData.assignee !== filters.assignee) {
+          return false
+        }
+
+        // Date range filter
+        if (filters.dateRange && (filters.dateRange.start || filters.dateRange.end)) {
+          const taskStart = taskData.startTime ? new Date(taskData.startTime) : null
+          const taskEnd = taskData.endTime ? new Date(taskData.endTime) : null
+
+          if (filters.dateRange.start) {
+            const filterStart = new Date(filters.dateRange.start)
+            if (taskEnd && taskEnd < filterStart) {
+              return false
+            }
+          }
+
+          if (filters.dateRange.end) {
+            const filterEnd = new Date(filters.dateRange.end)
+            if (taskStart && taskStart > filterEnd) {
+              return false
+            }
+          }
+        }
+
+        // Quick filters
+        if (filters.quickFilter) {
+          const now = new Date()
+          const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+
+          switch (filters.quickFilter) {
+            case 'today': {
+              const taskDate = taskData.startTime ? new Date(taskData.startTime) : null
+              if (!taskDate || taskDate.toDateString() !== today.toDateString()) {
+                return false
+              }
+              break
+            }
+
+            case 'week': {
+              const weekStart = new Date(today)
+              weekStart.setDate(today.getDate() - today.getDay())
+              const weekEnd = new Date(weekStart)
+              weekEnd.setDate(weekStart.getDate() + 6)
+
+              const taskStartDate = taskData.startTime ? new Date(taskData.startTime) : null
+              if (!taskStartDate || taskStartDate < weekStart || taskStartDate > weekEnd) {
+                return false
+              }
+              break
+            }
+
+            case 'overdue': {
+              const taskEndDate = taskData.endTime ? new Date(taskData.endTime) : null
+              if (!taskEndDate || taskEndDate >= today || taskData.status === 'done') {
+                return false
+              }
+              break
+            }
+          }
+        }
+        return true
+      })
+
+      return filterEventId
+    }
+
+    // Apply filters to gantt chart
+    const applyFilters = () => {
+      console.log('Applying filters:', props.filters, 'ganttInstance:', ganttInstance)
+      if (ganttInstance) {
+        console.log('Applying filters:', props.filters)
+
+        // 先嘗試簡單的測試過濾
+        if (props.filters && props.filters.status) {
+          console.log('Applying status filter:', props.filters.status)
+        }
+
+        gantt.render() // 使用 render() 而非 refreshData() 來觸發過濾事件
+        console.log('Gantt rendered after filter change')
+      }
+    }
+
+    // Watch for filter changes
+    watch(() => props.filters, () => {
+      applyFilters()
+    }, { deep: true })
+
     // Watch for data changes and update gantt
     watch(ganttData, (newData) => {
-      if (ganttInstance) {
+      if (ganttInstance && newData) {
         gantt.clearAll()
-        gantt.parse(newData)
+        // 確保資料有效才解析
+        if (newData.data && Array.isArray(newData.data)) {
+          gantt.parse(newData)
+          // 重新應用過濾器
+          setTimeout(() => {
+            applyFilters()
+          }, 50)
+        }
       }
     }, { deep: true })
 
@@ -467,7 +727,10 @@ export default {
     onBeforeUnmount(() => {
       if (ganttInstance) {
         gantt.clearAll()
-        ganttInstance = null
+        if (filterEventId) {
+          gantt.detachEvent(filterEventId)
+        }
+        ganttInstance = false
       }
     })
 
@@ -553,6 +816,7 @@ export default {
 
     return {
       ganttContainer,
+      showKeyboardShortcuts,
       initializeGantt,
       refreshGantt,
       setTimeScale,
@@ -563,7 +827,8 @@ export default {
       zoomOut,
       fitToScreen,
       expandAll,
-      collapseAll
+      collapseAll,
+      applyFilters
     }
   }
 }

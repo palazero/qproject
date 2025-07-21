@@ -133,14 +133,17 @@ export const useTaskStore = defineStore('task', {
         }
       })
 
-      const links = state.links
-        .filter(link => link && link.source && link.target) // 過濾無效的 links
-        .map((link, index) => ({
-          id: index + 1,
-          source: link.source,
-          target: link.target,
-          type: link.type || '0' // 0: finish_to_start
-        }))
+      // 暫時禁用 links 以避免渲染錯誤
+      const links = []
+      
+      // const links = state.links
+      //   .filter(link => link && link.source && link.target) // 過濾無效的 links
+      //   .map((link, index) => ({
+      //     id: index + 1,
+      //     source: link.source,
+      //     target: link.target,
+      //     type: link.type || '0' // 0: finish_to_start
+      //   }))
 
       console.log('Generated Gantt data:', { data, links })
       return { data, links }

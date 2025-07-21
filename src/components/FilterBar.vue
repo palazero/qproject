@@ -1,6 +1,22 @@
 <template>
   <q-card class="filter-bar q-pa-xs">
     <div class="row q-gutter-xs items-center">
+      <!-- Search -->
+      <div class="col-12 col-md-auto">
+        <q-input
+          v-model="searchText"
+          label="搜尋任務"
+          outlined
+          dense
+          clearable
+          debounce="300"
+        >
+          <template v-slot:prepend>
+            <q-icon name="search" />
+          </template>
+        </q-input>
+      </div>
+
       <!-- Status Filter -->
       <div class="col-12 col-sm-6 col-md-auto">
         <q-select
@@ -162,87 +178,71 @@
         />
       </div>
 
-      <!-- Search -->
-      <div class="col-12 col-md-auto flex-grow">
-        <q-input
-          v-model="searchText"
-          label="搜尋任務"
-          outlined
-          dense
-          clearable
-          debounce="300"
+      <!-- Active Filters Display -->
+      <div v-if="hasActiveFilters" class="row q-mt-xs q-gutter-xs">
+        <div class="text-caption text-grey-7 q-mr-xs">活躍篩選：</div>
+
+        <q-chip
+          v-if="localFilters.status"
+          removable
+          color="blue"
+          text-color="white"
+          @remove="localFilters.status = null"
         >
-          <template v-slot:prepend>
-            <q-icon name="search" />
-          </template>
-        </q-input>
+          狀態: {{ getStatusLabel(localFilters.status) }}
+        </q-chip>
+
+        <q-chip
+          v-if="localFilters.priority"
+          removable
+          color="orange"
+          text-color="white"
+          @remove="localFilters.priority = null"
+        >
+          優先級: {{ getPriorityLabel(localFilters.priority) }}
+        </q-chip>
+
+        <q-chip
+          v-for="tag in localFilters.tags"
+          :key="tag"
+          removable
+          color="purple"
+          text-color="white"
+          @remove="removeTag(tag)"
+        >
+          標籤: {{ tag }}
+        </q-chip>
+
+        <q-chip
+          v-if="localFilters.assignee"
+          removable
+          color="green"
+          text-color="white"
+          @remove="localFilters.assignee = null"
+        >
+          執行人: {{ localFilters.assignee }}
+        </q-chip>
+
+        <q-chip
+          v-if="localFilters.dateRange"
+          removable
+          color="teal"
+          text-color="white"
+          @remove="localFilters.dateRange = null"
+        >
+          日期: {{ formatDateRange(localFilters.dateRange) }}
+        </q-chip>
+
+        <q-chip
+          v-if="searchText"
+          removable
+          color="grey-7"
+          text-color="white"
+          @remove="searchText = ''"
+        >
+          搜尋: {{ searchText }}
+        </q-chip>
       </div>
-    </div>
-
-    <!-- Active Filters Display -->
-    <div v-if="hasActiveFilters" class="row q-mt-xs q-gutter-xs">
-      <div class="text-caption text-grey-7 q-mr-xs">活躍篩選：</div>
-
-      <q-chip
-        v-if="localFilters.status"
-        removable
-        color="blue"
-        text-color="white"
-        @remove="localFilters.status = null"
-      >
-        狀態: {{ getStatusLabel(localFilters.status) }}
-      </q-chip>
-
-      <q-chip
-        v-if="localFilters.priority"
-        removable
-        color="orange"
-        text-color="white"
-        @remove="localFilters.priority = null"
-      >
-        優先級: {{ getPriorityLabel(localFilters.priority) }}
-      </q-chip>
-
-      <q-chip
-        v-for="tag in localFilters.tags"
-        :key="tag"
-        removable
-        color="purple"
-        text-color="white"
-        @remove="removeTag(tag)"
-      >
-        標籤: {{ tag }}
-      </q-chip>
-
-      <q-chip
-        v-if="localFilters.assignee"
-        removable
-        color="green"
-        text-color="white"
-        @remove="localFilters.assignee = null"
-      >
-        執行人: {{ localFilters.assignee }}
-      </q-chip>
-
-      <q-chip
-        v-if="localFilters.dateRange"
-        removable
-        color="teal"
-        text-color="white"
-        @remove="localFilters.dateRange = null"
-      >
-        日期: {{ formatDateRange(localFilters.dateRange) }}
-      </q-chip>
-
-      <q-chip
-        v-if="searchText"
-        removable
-        color="grey-7"
-        text-color="white"
-        @remove="searchText = ''"
-      >
-        搜尋: {{ searchText }}
-      </q-chip>
     </div>
 
     <!-- Filter Summary -->
