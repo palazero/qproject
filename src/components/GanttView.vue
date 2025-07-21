@@ -962,7 +962,7 @@ export default {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 8px 12px;
+  padding: 1px 8px;
   background: #fafafa;
   border-bottom: 1px solid #e0e0e0;
   gap: 16px;
