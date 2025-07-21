@@ -171,6 +171,7 @@
       v-model="showEditDialog"
       :task-id="editingTaskId"
       :parent-id="editingParentId"
+      :initial-data="initialTaskData"
       @task-saved="onTaskSaved"
       @task-deleted="onTaskDeleted"
     />
@@ -216,6 +217,7 @@ export default {
     const showEditDialog = ref(false)
     const editingTaskId = ref(null)
     const editingParentId = ref(null)
+    const initialTaskData = ref(null)
     const searchText = ref('')
     const filters = ref({})
 
@@ -312,9 +314,17 @@ export default {
     }
 
     // Task management methods
-    const showAddTask = () => {
+    const showAddTask = (taskData = null) => {
       editingTaskId.value = null
-      editingParentId.value = null
+      if (taskData && taskData.parentId) {
+        // 如果有指定父任務ID，則為子任務
+        editingParentId.value = taskData.parentId
+        initialTaskData.value = taskData
+      } else {
+        // 否則為普通任務
+        editingParentId.value = null
+        initialTaskData.value = taskData
+      }
       showEditDialog.value = true
     }
 
@@ -384,16 +394,16 @@ export default {
       if (data.searchText !== undefined) {
         searchText.value = data.searchText || ''
       }
-      
+
       // 更新過濾器狀態，供 GanttView 使用 - 包含 searchText
-      filters.value = { 
+      filters.value = {
         ...data.filters,
         searchText: data.searchText || ''
       }
-      console.log('Filter change received:', data, 'Updated filters:', filters.value)
     }
 
     const onTaskSaved = () => {
+      initialTaskData.value = null // 清除初始數據
       $q.notify({
         message: '任務已儲存',
         color: 'positive',
@@ -407,6 +417,7 @@ export default {
     }
 
     const onTaskDeleted = () => {
+      initialTaskData.value = null // 清除初始數據
       $q.notify({
         message: '任務已刪除',
         color: 'info',
@@ -557,6 +568,7 @@ export default {
       showEditDialog,
       editingTaskId,
       editingParentId,
+      initialTaskData,
       searchText,
       filters,
 

@@ -314,6 +314,10 @@ export default {
     parentId: {
       type: String,
       default: null
+    },
+    initialData: {
+      type: Object,
+      default: null
     }
   },
   
@@ -485,16 +489,16 @@ export default {
       } else {
         // Reset form for new task
         formData.value = {
-          title: '',
-          description: '',
+          title: props.initialData?.title || '',
+          description: props.initialData?.description || '',
           parentId: props.parentId || null,
-          startTime: '',
-          endTime: '',
-          assignee: '',
-          status: 'todo',
-          priority: 'medium',
-          tags: [],
-          dependencies: []
+          startTime: props.initialData?.startTime ? formatDateTimeLocal(props.initialData.startTime) : '',
+          endTime: props.initialData?.endTime ? formatDateTimeLocal(props.initialData.endTime) : '',
+          assignee: props.initialData?.assignee || '',
+          status: props.initialData?.status || 'todo',
+          priority: props.initialData?.priority || 'medium',
+          tags: props.initialData?.tags ? [...props.initialData.tags] : [],
+          dependencies: props.initialData?.dependencies ? [...props.initialData.dependencies] : []
         }
       }
     }

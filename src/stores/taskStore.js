@@ -17,7 +17,7 @@ const formatDateForGantt = (date) => {
 // LocalStorage persistence plugin
 const persistencePlugin = (store) => {
   let debounceTimer = null
-  
+
   // Load initial data from localStorage
   const stored = localStorage.getItem(STORAGE_KEY)
   if (stored) {
@@ -28,7 +28,7 @@ const persistencePlugin = (store) => {
       console.warn('Failed to load stored data:', e)
     }
   }
-  
+
   // Save to localStorage with debounce
   store.$subscribe((mutation, state) => {
     clearTimeout(debounceTimer)
@@ -37,7 +37,7 @@ const persistencePlugin = (store) => {
         tasks: state.tasks,
         links: state.links,
         tags: state.tags,
-        lastUpdated: Date.now()
+        lastUpdated: Date.now(),
       }
       localStorage.setItem(STORAGE_KEY, JSON.stringify(dataToStore))
     }, 500)
@@ -58,8 +58,8 @@ export const useTaskStore = defineStore('task', {
       priority: null,
       tags: [],
       assignee: null,
-      dateRange: null
-    }
+      dateRange: null,
+    },
   }),
 
   getters: {
@@ -67,11 +67,11 @@ export const useTaskStore = defineStore('task', {
     taskTree: (state) => {
       const buildTree = (parentId = null) => {
         return state.tasks
-          .filter(task => task.parentId === parentId)
+          .filter((task) => task.parentId === parentId)
           .sort((a, b) => a.sortOrder - b.sortOrder)
-          .map(task => ({
+          .map((task) => ({
             ...task,
-            children: buildTree(task.id)
+            children: buildTree(task.id),
           }))
       }
       return buildTree()
@@ -80,62 +80,62 @@ export const useTaskStore = defineStore('task', {
     // Get filtered tasks
     filteredTasks: (state) => {
       let filtered = [...state.tasks]
-      
+
       if (state.filters.status) {
-        filtered = filtered.filter(task => task.status === state.filters.status)
+        filtered = filtered.filter((task) => task.status === state.filters.status)
       }
-      
+
       if (state.filters.priority) {
-        filtered = filtered.filter(task => task.priority === state.filters.priority)
+        filtered = filtered.filter((task) => task.priority === state.filters.priority)
       }
-      
+
       if (state.filters.tags.length > 0) {
-        filtered = filtered.filter(task => 
-          task.tags.some(tag => state.filters.tags.includes(tag))
+        filtered = filtered.filter((task) =>
+          task.tags.some((tag) => state.filters.tags.includes(tag)),
         )
       }
-      
+
       if (state.filters.assignee) {
-        filtered = filtered.filter(task => task.assignee === state.filters.assignee)
+        filtered = filtered.filter((task) => task.assignee === state.filters.assignee)
       }
-      
+
       return filtered
     },
 
     // Convert tasks to Gantt format
     ganttData: (state) => {
-      const data = state.tasks.map(task => {
+      const data = state.tasks.map((task) => {
         // 計算日期
         let startDate = task.startTime ? new Date(task.startTime) : new Date()
         let duration = 1
-        
+
         if (task.startTime && task.endTime) {
           const start = new Date(task.startTime)
           const end = new Date(task.endTime)
           duration = Math.max(1, Math.ceil((end - start) / (1000 * 60 * 60 * 24)))
         }
-        
+
         // 確保日期格式正確，避免時區偏移問題
         const formattedStartDate = formatDateForGantt(startDate)
-        
+
         return {
           id: task.id,
           text: task.title || '未命名任務',
           start_date: formattedStartDate,
           duration: duration,
           parent: task.parentId || 0,
-          progress: task.status === 'done' ? 1 : (task.status === 'in_progress' ? 0.5 : 0),
+          progress: task.status === 'done' ? 1 : task.status === 'in_progress' ? 0.5 : 0,
           type: 'task',
           // 添加額外資訊
           priority: task.priority,
           status: task.status,
-          assignee: task.assignee
+          assignee: task.assignee,
         }
       })
 
       // 暫時禁用 links 以避免渲染錯誤
       const links = []
-      
+
       // const links = state.links
       //   .filter(link => link && link.source && link.target) // 過濾無效的 links
       //   .map((link, index) => ({
@@ -145,38 +145,37 @@ export const useTaskStore = defineStore('task', {
       //     type: link.type || '0' // 0: finish_to_start
       //   }))
 
-      console.log('Generated Gantt data:', { data, links })
       return { data, links }
     },
 
     // Get task by ID
     getTaskById: (state) => (id) => {
-      return state.tasks.find(task => task.id === id)
+      return state.tasks.find((task) => task.id === id)
     },
 
     // Get task dependencies
     getTaskDependencies: (state) => (taskId) => {
-      return state.tasks.filter(task => task.dependencies.includes(taskId))
+      return state.tasks.filter((task) => task.dependencies.includes(taskId))
     },
 
     // Check if task can be marked as done (all dependencies completed)
     canMarkAsDone: (state) => (taskId) => {
-      const task = state.tasks.find(t => t.id === taskId)
+      const task = state.tasks.find((t) => t.id === taskId)
       if (!task || !task.dependencies.length) return true
-      
-      return task.dependencies.every(depId => {
-        const depTask = state.tasks.find(t => t.id === depId)
+
+      return task.dependencies.every((depId) => {
+        const depTask = state.tasks.find((t) => t.id === depId)
         return depTask && depTask.status === 'done'
       })
     },
 
     // Get blocked tasks (tasks that cannot proceed due to dependencies)
     getBlockedTasks: (state) => {
-      return state.tasks.filter(task => {
+      return state.tasks.filter((task) => {
         if (task.status === 'done' || !task.dependencies.length) return false
-        
-        return task.dependencies.some(depId => {
-          const depTask = state.tasks.find(t => t.id === depId)
+
+        return task.dependencies.some((depId) => {
+          const depTask = state.tasks.find((t) => t.id === depId)
           return !depTask || depTask.status !== 'done'
         })
       })
@@ -186,23 +185,23 @@ export const useTaskStore = defineStore('task', {
     getDependencyChain: (state) => (taskId) => {
       const visited = new Set()
       const chain = []
-      
+
       const buildChain = (id) => {
         if (visited.has(id)) return // Prevent circular dependencies
         visited.add(id)
-        
-        const task = state.tasks.find(t => t.id === id)
+
+        const task = state.tasks.find((t) => t.id === id)
         if (!task) return
-        
-        task.dependencies.forEach(depId => {
-          const depTask = state.tasks.find(t => t.id === depId)
+
+        task.dependencies.forEach((depId) => {
+          const depTask = state.tasks.find((t) => t.id === depId)
           if (depTask) {
             chain.push(depTask)
             buildChain(depId)
           }
         })
       }
-      
+
       buildChain(taskId)
       return chain
     },
@@ -212,17 +211,17 @@ export const useTaskStore = defineStore('task', {
       const checkCircular = (id, visited = new Set()) => {
         if (visited.has(id)) return true
         if (id === taskId) return true
-        
+
         visited.add(id)
-        
-        const task = state.tasks.find(t => t.id === id)
+
+        const task = state.tasks.find((t) => t.id === id)
         if (!task) return false
-        
-        return task.dependencies.some(depId => checkCircular(depId, new Set(visited)))
+
+        return task.dependencies.some((depId) => checkCircular(depId, new Set(visited)))
       }
-      
-      return newDependencies.some(depId => checkCircular(depId))
-    }
+
+      return newDependencies.some((depId) => checkCircular(depId))
+    },
   },
 
   actions: {
@@ -242,9 +241,9 @@ export const useTaskStore = defineStore('task', {
         dependencies: taskData.dependencies || [],
         sortOrder: taskData.sortOrder || this.getNextSortOrder(taskData.parentId),
         createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString()
+        updatedAt: new Date().toISOString(),
       }
-      
+
       this.tasks.push(newTask)
       this.updateTaskLinks()
       return newTask
@@ -252,7 +251,7 @@ export const useTaskStore = defineStore('task', {
 
     // Update existing task
     updateTask(taskId, updates) {
-      const index = this.tasks.findIndex(task => task.id === taskId)
+      const index = this.tasks.findIndex((task) => task.id === taskId)
       if (index !== -1) {
         // Validate dependencies if they are being updated
         if (updates.dependencies) {
@@ -260,23 +259,23 @@ export const useTaskStore = defineStore('task', {
             throw new Error('無法建立循環依賴關係')
           }
         }
-        
+
         // Validate status change
         if (updates.status === 'done' && !this.canMarkAsDone(taskId)) {
           throw new Error('無法標記為完成：仍有未完成的依賴任務')
         }
-        
+
         this.tasks[index] = {
           ...this.tasks[index],
           ...updates,
-          updatedAt: new Date().toISOString()
+          updatedAt: new Date().toISOString(),
         }
-        
+
         // Auto-block dependent tasks if this task is blocked
         if (updates.status === 'blocked') {
           this.autoBlockDependentTasks(taskId)
         }
-        
+
         this.updateTaskLinks()
       }
     },
@@ -285,25 +284,25 @@ export const useTaskStore = defineStore('task', {
     deleteTask(taskId) {
       const deleteRecursive = (id) => {
         // Delete children first
-        const children = this.tasks.filter(task => task.parentId === id)
-        children.forEach(child => deleteRecursive(child.id))
-        
+        const children = this.tasks.filter((task) => task.parentId === id)
+        children.forEach((child) => deleteRecursive(child.id))
+
         // Remove from tasks array
-        this.tasks = this.tasks.filter(task => task.id !== id)
-        
+        this.tasks = this.tasks.filter((task) => task.id !== id)
+
         // Remove from dependencies of other tasks
-        this.tasks.forEach(task => {
-          task.dependencies = task.dependencies.filter(depId => depId !== id)
+        this.tasks.forEach((task) => {
+          task.dependencies = task.dependencies.filter((depId) => depId !== id)
         })
       }
-      
+
       deleteRecursive(taskId)
       this.updateTaskLinks()
     },
 
     // Update task order after drag and drop
     updateTaskOrder(taskId, newParentId, newIndex) {
-      const task = this.tasks.find(t => t.id === taskId)
+      const task = this.tasks.find((t) => t.id === taskId)
       if (!task) {
         console.warn('Task not found:', taskId)
         return
@@ -314,86 +313,84 @@ export const useTaskStore = defineStore('task', {
         console.warn('Cannot move task into itself')
         return
       }
-      
+
       if (newParentId && this.isDescendantOf(newParentId, taskId)) {
         console.warn('Cannot move task into its own descendant')
         return
       }
 
-      
       // Store old parent for cleanup
       const oldParentId = task.parentId
-      
+
       // Update task's parent
       task.parentId = newParentId
       task.updatedAt = new Date().toISOString()
-      
+
       // Reorder siblings in the new parent
       const newSiblings = this.tasks
-        .filter(t => t.parentId === newParentId && t.id !== taskId)
+        .filter((t) => t.parentId === newParentId && t.id !== taskId)
         .sort((a, b) => a.sortOrder - b.sortOrder)
-      
+
       // Insert at new position
       newSiblings.splice(newIndex, 0, task)
-      
+
       // Update sort orders for all siblings in new parent
       newSiblings.forEach((sibling, index) => {
         sibling.sortOrder = index + 1
       })
-      
+
       // Reorder siblings in the old parent
       if (oldParentId !== newParentId) {
         const oldSiblings = this.tasks
-          .filter(t => t.parentId === oldParentId)
+          .filter((t) => t.parentId === oldParentId)
           .sort((a, b) => a.sortOrder - b.sortOrder)
-        
+
         oldSiblings.forEach((sibling, index) => {
           sibling.sortOrder = index + 1
         })
       }
-      
+
       // Update task links to reflect new structure
       this.updateTaskLinks()
-      
     },
 
     // Check if targetId is a descendant of sourceId
     isDescendantOf(targetId, sourceId) {
       if (!targetId || !sourceId || targetId === sourceId) return false
-      
+
       // Walk up the parent chain from targetId to see if we reach sourceId
       let currentId = targetId
       const visited = new Set()
-      
+
       while (currentId) {
         if (visited.has(currentId)) break // Prevent infinite loops
         visited.add(currentId)
-        
-        const currentTask = this.tasks.find(t => t.id === currentId)
+
+        const currentTask = this.tasks.find((t) => t.id === currentId)
         if (!currentTask) break
-        
+
         currentId = currentTask.parentId
         if (currentId === sourceId) return true
       }
-      
+
       return false
     },
 
     // Get next sort order for a parent
     getNextSortOrder(parentId) {
-      const siblings = this.tasks.filter(task => task.parentId === parentId)
-      return siblings.length > 0 ? Math.max(...siblings.map(t => t.sortOrder)) + 1 : 1
+      const siblings = this.tasks.filter((task) => task.parentId === parentId)
+      return siblings.length > 0 ? Math.max(...siblings.map((t) => t.sortOrder)) + 1 : 1
     },
 
     // Update task links based on dependencies
     updateTaskLinks() {
       this.links = []
-      this.tasks.forEach(task => {
-        task.dependencies.forEach(depId => {
+      this.tasks.forEach((task) => {
+        task.dependencies.forEach((depId) => {
           this.links.push({
             source: depId,
             target: task.id,
-            type: '0' // finish_to_start
+            type: '0', // finish_to_start
           })
         })
       })
@@ -411,7 +408,7 @@ export const useTaskStore = defineStore('task', {
         priority: null,
         tags: [],
         assignee: null,
-        dateRange: null
+        dateRange: null,
       }
     },
 
@@ -435,7 +432,7 @@ export const useTaskStore = defineStore('task', {
       const getAllTaskIds = (tasks) => {
         const ids = []
         const collectIds = (taskList) => {
-          taskList.forEach(task => {
+          taskList.forEach((task) => {
             if (task.children && task.children.length > 0) {
               ids.push(task.id) // Only add tasks that have children
               collectIds(task.children)
@@ -445,7 +442,7 @@ export const useTaskStore = defineStore('task', {
         collectIds(tasks)
         return ids
       }
-      
+
       // Use taskTree getter to get proper hierarchical structure
       const allTaskIds = getAllTaskIds(this.taskTree)
       this.expandedTasks = [...allTaskIds]
@@ -470,20 +467,19 @@ export const useTaskStore = defineStore('task', {
 
     // Expand only direct children of a task
     expandTaskLevel(taskId) {
-      const task = this.tasks.find(t => t.id === taskId)
+      const task = this.tasks.find((t) => t.id === taskId)
       if (task && task.children && task.children.length > 0) {
         // Add the task itself to expanded state
         if (!this.expandedTasks.includes(taskId)) {
           this.expandedTasks.push(taskId)
         }
-        
+
         // Find tasks that have this task as parent and have children
-        const directChildren = this.tasks.filter(t => 
-          t.parentId === taskId && 
-          this.tasks.some(child => child.parentId === t.id)
+        const directChildren = this.tasks.filter(
+          (t) => t.parentId === taskId && this.tasks.some((child) => child.parentId === t.id),
         )
-        
-        directChildren.forEach(child => {
+
+        directChildren.forEach((child) => {
           if (!this.expandedTasks.includes(child.id)) {
             this.expandedTasks.push(child.id)
           }
@@ -495,22 +491,22 @@ export const useTaskStore = defineStore('task', {
     collapseTaskLevel(taskId) {
       const getAllDescendants = (parentId) => {
         const descendants = []
-        const children = this.tasks.filter(t => t.parentId === parentId)
-        children.forEach(child => {
+        const children = this.tasks.filter((t) => t.parentId === parentId)
+        children.forEach((child) => {
           descendants.push(child.id)
           descendants.push(...getAllDescendants(child.id))
         })
         return descendants
       }
-      
+
       // Remove the task and all its descendants from expanded state
       const taskIndex = this.expandedTasks.indexOf(taskId)
       if (taskIndex !== -1) {
         this.expandedTasks.splice(taskIndex, 1)
       }
-      
+
       const descendants = getAllDescendants(taskId)
-      descendants.forEach(id => {
+      descendants.forEach((id) => {
         const index = this.expandedTasks.indexOf(id)
         if (index !== -1) {
           this.expandedTasks.splice(index, 1)
@@ -520,9 +516,9 @@ export const useTaskStore = defineStore('task', {
 
     // Duplicate task
     duplicateTask(taskId) {
-      const originalTask = this.tasks.find(task => task.id === taskId)
+      const originalTask = this.tasks.find((task) => task.id === taskId)
       if (!originalTask) return null
-      
+
       const duplicatedTask = {
         ...originalTask,
         id: uuidv4(),
@@ -530,9 +526,9 @@ export const useTaskStore = defineStore('task', {
         dependencies: [], // Clear dependencies for duplicated task
         sortOrder: this.getNextSortOrder(originalTask.parentId),
         createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString()
+        updatedAt: new Date().toISOString(),
       }
-      
+
       this.tasks.push(duplicatedTask)
       this.updateTaskLinks()
       return duplicatedTask
@@ -547,16 +543,16 @@ export const useTaskStore = defineStore('task', {
 
     // Remove tag
     removeTag(tag) {
-      this.tags = this.tags.filter(t => t !== tag)
+      this.tags = this.tags.filter((t) => t !== tag)
     },
 
     // Auto-block dependent tasks
     autoBlockDependentTasks(taskId) {
-      const dependentTasks = this.tasks.filter(task => 
-        task.dependencies.includes(taskId) && task.status !== 'done'
+      const dependentTasks = this.tasks.filter(
+        (task) => task.dependencies.includes(taskId) && task.status !== 'done',
       )
-      
-      dependentTasks.forEach(task => {
+
+      dependentTasks.forEach((task) => {
         if (task.status !== 'blocked') {
           task.status = 'blocked'
           task.updatedAt = new Date().toISOString()
@@ -567,36 +563,36 @@ export const useTaskStore = defineStore('task', {
     // Validate and fix task dependencies
     validateTaskDependencies() {
       let fixCount = 0
-      
-      this.tasks.forEach(task => {
+
+      this.tasks.forEach((task) => {
         // Remove invalid dependencies (tasks that don't exist)
-        const validDependencies = task.dependencies.filter(depId => 
-          this.tasks.find(t => t.id === depId)
+        const validDependencies = task.dependencies.filter((depId) =>
+          this.tasks.find((t) => t.id === depId),
         )
-        
+
         if (validDependencies.length !== task.dependencies.length) {
           task.dependencies = validDependencies
           fixCount++
         }
-        
+
         // Auto-block tasks with incomplete dependencies
         if (task.status !== 'done' && task.dependencies.length > 0) {
-          const hasIncompleteDeps = task.dependencies.some(depId => {
-            const depTask = this.tasks.find(t => t.id === depId)
+          const hasIncompleteDeps = task.dependencies.some((depId) => {
+            const depTask = this.tasks.find((t) => t.id === depId)
             return depTask && depTask.status !== 'done'
           })
-          
+
           if (hasIncompleteDeps && task.status !== 'blocked') {
             task.status = 'blocked'
             fixCount++
           }
         }
       })
-      
+
       if (fixCount > 0) {
         this.updateTaskLinks()
       }
-      
+
       return fixCount
     },
 
@@ -609,36 +605,36 @@ export const useTaskStore = defineStore('task', {
         const developmentTaskId = uuidv4()
         const testingTaskId = uuidv4()
         const deploymentTaskId = uuidv4()
-        
+
         // Level 1 - Sub-phases under Design
         const wireframeTaskId = uuidv4()
         const uiDesignTaskId = uuidv4()
         const prototypeTaskId = uuidv4()
-        
+
         // Level 2 - Detailed tasks under UI Design
         const colorSchemeTaskId = uuidv4()
         const componentsTaskId = uuidv4()
         const responsiveTaskId = uuidv4()
-        
+
         // Level 1 - Sub-phases under Development
         const frontendTaskId = uuidv4()
         const backendTaskId = uuidv4()
         const databaseTaskId = uuidv4()
-        
+
         // Level 2 - Detailed tasks under Frontend
         const authPageTaskId = uuidv4()
         const dashboardTaskId = uuidv4()
         const apiIntegrationTaskId = uuidv4()
-        
+
         // Level 2 - Detailed tasks under Backend
         const authApiTaskId = uuidv4()
         const userApiTaskId = uuidv4()
         const dataApiTaskId = uuidv4()
-        
+
         // Level 3 - Granular tasks under Auth API
         const jwtTaskId = uuidv4()
         const validationTaskId = uuidv4()
-        
+
         const sampleTasks = [
           // Level 0 - Main project phases
           {
@@ -655,7 +651,7 @@ export const useTaskStore = defineStore('task', {
             dependencies: [],
             sortOrder: 1,
             createdAt: new Date().toISOString(),
-            updatedAt: new Date().toISOString()
+            updatedAt: new Date().toISOString(),
           },
           {
             id: designTaskId,
@@ -671,7 +667,7 @@ export const useTaskStore = defineStore('task', {
             dependencies: [planningTaskId],
             sortOrder: 2,
             createdAt: new Date().toISOString(),
-            updatedAt: new Date().toISOString()
+            updatedAt: new Date().toISOString(),
           },
           {
             id: developmentTaskId,
@@ -687,7 +683,7 @@ export const useTaskStore = defineStore('task', {
             dependencies: [designTaskId],
             sortOrder: 3,
             createdAt: new Date().toISOString(),
-            updatedAt: new Date().toISOString()
+            updatedAt: new Date().toISOString(),
           },
           {
             id: testingTaskId,
@@ -703,7 +699,7 @@ export const useTaskStore = defineStore('task', {
             dependencies: [developmentTaskId],
             sortOrder: 4,
             createdAt: new Date().toISOString(),
-            updatedAt: new Date().toISOString()
+            updatedAt: new Date().toISOString(),
           },
           {
             id: deploymentTaskId,
@@ -719,7 +715,7 @@ export const useTaskStore = defineStore('task', {
             dependencies: [testingTaskId],
             sortOrder: 5,
             createdAt: new Date().toISOString(),
-            updatedAt: new Date().toISOString()
+            updatedAt: new Date().toISOString(),
           },
 
           // Level 1 - Design sub-tasks
@@ -737,7 +733,7 @@ export const useTaskStore = defineStore('task', {
             dependencies: [planningTaskId],
             sortOrder: 1,
             createdAt: new Date().toISOString(),
-            updatedAt: new Date().toISOString()
+            updatedAt: new Date().toISOString(),
           },
           {
             id: uiDesignTaskId,
@@ -753,7 +749,7 @@ export const useTaskStore = defineStore('task', {
             dependencies: [wireframeTaskId],
             sortOrder: 2,
             createdAt: new Date().toISOString(),
-            updatedAt: new Date().toISOString()
+            updatedAt: new Date().toISOString(),
           },
           {
             id: prototypeTaskId,
@@ -769,7 +765,7 @@ export const useTaskStore = defineStore('task', {
             dependencies: [uiDesignTaskId],
             sortOrder: 3,
             createdAt: new Date().toISOString(),
-            updatedAt: new Date().toISOString()
+            updatedAt: new Date().toISOString(),
           },
 
           // Level 2 - UI Design detailed tasks
@@ -787,7 +783,7 @@ export const useTaskStore = defineStore('task', {
             dependencies: [wireframeTaskId],
             sortOrder: 1,
             createdAt: new Date().toISOString(),
-            updatedAt: new Date().toISOString()
+            updatedAt: new Date().toISOString(),
           },
           {
             id: componentsTaskId,
@@ -803,7 +799,7 @@ export const useTaskStore = defineStore('task', {
             dependencies: [colorSchemeTaskId],
             sortOrder: 2,
             createdAt: new Date().toISOString(),
-            updatedAt: new Date().toISOString()
+            updatedAt: new Date().toISOString(),
           },
           {
             id: responsiveTaskId,
@@ -819,7 +815,7 @@ export const useTaskStore = defineStore('task', {
             dependencies: [componentsTaskId],
             sortOrder: 3,
             createdAt: new Date().toISOString(),
-            updatedAt: new Date().toISOString()
+            updatedAt: new Date().toISOString(),
           },
 
           // Level 1 - Development sub-tasks
@@ -837,7 +833,7 @@ export const useTaskStore = defineStore('task', {
             dependencies: [uiDesignTaskId],
             sortOrder: 1,
             createdAt: new Date().toISOString(),
-            updatedAt: new Date().toISOString()
+            updatedAt: new Date().toISOString(),
           },
           {
             id: backendTaskId,
@@ -853,7 +849,7 @@ export const useTaskStore = defineStore('task', {
             dependencies: [planningTaskId],
             sortOrder: 2,
             createdAt: new Date().toISOString(),
-            updatedAt: new Date().toISOString()
+            updatedAt: new Date().toISOString(),
           },
           {
             id: databaseTaskId,
@@ -869,7 +865,7 @@ export const useTaskStore = defineStore('task', {
             dependencies: [planningTaskId],
             sortOrder: 3,
             createdAt: new Date().toISOString(),
-            updatedAt: new Date().toISOString()
+            updatedAt: new Date().toISOString(),
           },
 
           // Level 2 - Frontend detailed tasks
@@ -887,7 +883,7 @@ export const useTaskStore = defineStore('task', {
             dependencies: [componentsTaskId],
             sortOrder: 1,
             createdAt: new Date().toISOString(),
-            updatedAt: new Date().toISOString()
+            updatedAt: new Date().toISOString(),
           },
           {
             id: dashboardTaskId,
@@ -903,7 +899,7 @@ export const useTaskStore = defineStore('task', {
             dependencies: [authPageTaskId],
             sortOrder: 2,
             createdAt: new Date().toISOString(),
-            updatedAt: new Date().toISOString()
+            updatedAt: new Date().toISOString(),
           },
           {
             id: apiIntegrationTaskId,
@@ -919,7 +915,7 @@ export const useTaskStore = defineStore('task', {
             dependencies: [backendTaskId],
             sortOrder: 3,
             createdAt: new Date().toISOString(),
-            updatedAt: new Date().toISOString()
+            updatedAt: new Date().toISOString(),
           },
 
           // Level 2 - Backend detailed tasks
@@ -937,7 +933,7 @@ export const useTaskStore = defineStore('task', {
             dependencies: [databaseTaskId],
             sortOrder: 1,
             createdAt: new Date().toISOString(),
-            updatedAt: new Date().toISOString()
+            updatedAt: new Date().toISOString(),
           },
           {
             id: userApiTaskId,
@@ -953,7 +949,7 @@ export const useTaskStore = defineStore('task', {
             dependencies: [authApiTaskId],
             sortOrder: 2,
             createdAt: new Date().toISOString(),
-            updatedAt: new Date().toISOString()
+            updatedAt: new Date().toISOString(),
           },
           {
             id: dataApiTaskId,
@@ -969,7 +965,7 @@ export const useTaskStore = defineStore('task', {
             dependencies: [userApiTaskId],
             sortOrder: 3,
             createdAt: new Date().toISOString(),
-            updatedAt: new Date().toISOString()
+            updatedAt: new Date().toISOString(),
           },
 
           // Level 3 - Auth API granular tasks
@@ -987,7 +983,7 @@ export const useTaskStore = defineStore('task', {
             dependencies: [databaseTaskId],
             sortOrder: 1,
             createdAt: new Date().toISOString(),
-            updatedAt: new Date().toISOString()
+            updatedAt: new Date().toISOString(),
           },
           {
             id: validationTaskId,
@@ -1003,10 +999,10 @@ export const useTaskStore = defineStore('task', {
             dependencies: [jwtTaskId],
             sortOrder: 2,
             createdAt: new Date().toISOString(),
-            updatedAt: new Date().toISOString()
-          }
+            updatedAt: new Date().toISOString(),
+          },
         ]
-        
+
         this.tasks = sampleTasks
         this.updateTaskLinks()
       }
@@ -1021,9 +1017,9 @@ export const useTaskStore = defineStore('task', {
       localStorage.removeItem(STORAGE_KEY)
       // Reload sample data
       this.initializeSampleData()
-    }
+    },
   },
 
   // Install persistence plugin
-  plugins: [persistencePlugin]
+  plugins: [persistencePlugin],
 })

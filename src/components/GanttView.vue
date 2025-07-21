@@ -157,6 +157,7 @@ export default {
 
     let ganttInstance = null
     let filterEventId = null
+    let scaleWheelListener = null // 新增：用於移除事件
 
     // Get gantt data from store
     const ganttData = computed(() => taskStore.ganttData)
@@ -171,11 +172,8 @@ export default {
 
     const initializeGantt = () => {
       if (!ganttContainer.value) {
-        console.error('Gantt container not ready')
         return
       }
-
-      console.log('Initializing Gantt chart...')
 
       // Configure Gantt - 使用新的配置方式
       gantt.config.date_format = '%Y-%m-%d %H:%i'
@@ -187,7 +185,6 @@ export default {
       ]
 
       gantt.config.scale_height = 50
-      gantt.config.min_column_width = 60
       gantt.config.autofit = false
       gantt.config.fit_tasks = false
       gantt.config.scroll_on_load = true
@@ -270,24 +267,13 @@ export default {
       // 禁用內建的 lightbox 編輯器，使用我們自己的對話框
       gantt.config.lightbox.sections = []
 
-      // 自定義新任務的預設值
-      gantt.attachEvent('onTaskCreated', (task) => {
-        task.text = '新任務'
-        task.duration = 1
-        task.start_date = gantt.getClosestWorkTime({
-          date: new Date(),
-          dir: 'future'
-        })
-        return true
-      })
-
       // 啟用zoom擴展
       gantt.ext.zoom.init({
         levels: [
           {
             name: 'day',
             scale_height: 50,
-            min_column_width: 80,
+            min_column_width: 50,
             scales: [
               { unit: 'month', step: 1, format: '%Y年%m月' },
               { unit: 'day', step: 1, format: '%m/%d' }
@@ -340,6 +326,12 @@ export default {
         <b>執行人:</b> ${task.assignee || '未指定'}<br/>
         <b>狀態:</b> ${task.status || '未指定'}`
 
+      // Event handlers
+      setupEventHandlers()
+
+      // Setup filtering
+      setupFiltering()
+
       // Initialize gantt
       gantt.init(ganttContainer.value)
       ganttInstance = true // 標記為已初始化
@@ -371,12 +363,6 @@ export default {
         }
         gantt.parse(sampleData)
       }
-
-      // Event handlers
-      setupEventHandlers()
-
-      // Setup filtering
-      setupFiltering()
     }
 
     // Helper function to convert Gantt date to local datetime string
@@ -433,7 +419,6 @@ export default {
             updateData.assignee = item.assignee || ''
           }
 
-          console.log('Updating task via inline edit:', id, updateData)
           taskStore.updateTask(id, updateData)
         }
       })
@@ -457,49 +442,60 @@ export default {
         return false // Prevent default gantt edit
       })
 
-      // Task creation - 發送事件
-      gantt.attachEvent('onAfterTaskAdd', (id, item) => {
-        // 立即刪除甘特圖中的任務，防止未確認的任務顯示
-        gantt.deleteTask(id, false) // false = 不觸發 onAfterTaskDelete 事件
-
-        // 發送創建事件給父組件處理
-        const taskData = {
-          title: item.text || '新任務',
-          startTime: item.start_date ? getLocalDateTimeString(item.start_date) : null,
-          endTime: item.end_date ? getLocalDateTimeString(item.end_date) : null,
-          parentId: item.parent !== '0' ? item.parent : null
-        }
-        emit('task-create', taskData)
-        return false // 阻止預設行為
-      })
-
       // Task deletion
       gantt.attachEvent('onAfterTaskDelete', (id) => {
         taskStore.deleteTask(id)
       })
 
-      // 增強快速新增體驗
-      // 空白區域雙擊新增任務
-      gantt.attachEvent('onEmptyClick', (e) => {
-        if (e.detail === 2) { // 雙擊
-          // 計算點擊位置對應的日期
-          const date = gantt.dateFromPos(e.offsetX - gantt.config.grid_width)
-          if (date) {
-            createQuickTask(date)
-          }
-        }
-        return true
-      })
-
       // 右鍵選單支援
       gantt.attachEvent('onContextMenu', (taskId, linkId, e) => {
-        if (!taskId && !linkId) {
-          // 空白區域右鍵
-          e.preventDefault()
+        e.preventDefault()
+        if (taskId) {
+          // 任務上右鍵 - 顯示任務操作選單
+          showTaskContextMenu(e, taskId)
+        } else if (!linkId) {
+          // 空白區域右鍵 - 顯示新增任務選單
           showContextMenu(e)
-          return false
         }
-        return true
+        return false
+      })
+
+      // 新增：用於處理時間軸縮放事件`
+      gantt.attachEvent('onGanttReady', function() {
+        const scaleEl = ganttContainer.value?.querySelector('.gantt_data_area')
+        scaleEl.addEventListener('wheel', (e) => {
+          if (e.ctrlKey) {
+            e.preventDefault()
+            let newColumnWidth = gantt.config.min_column_width
+            if (e.deltaY < 0) {
+              newColumnWidth += 5
+            } else if (e.deltaY > 0) {
+              newColumnWidth -= 5
+            }
+            if (gantt.ext.zoom.getCurrentLevel() === 0) {
+              newColumnWidth = Math.max(30, Math.min(120, newColumnWidth))
+              if (newColumnWidth < 40) {
+                setTimeScale('day', '%d')
+              } else {
+                setTimeScale('day', '%m/%d')
+              }
+            } else if (gantt.ext.zoom.getCurrentLevel() === 1) {
+              newColumnWidth = Math.max(30, Math.min(180, newColumnWidth))
+              if (newColumnWidth < 50) {
+                setTimeScale('week', '%W')
+              } else {
+                setTimeScale('week', '第%W週')
+              }
+            } else if (gantt.ext.zoom.getCurrentLevel() === 2) {
+              newColumnWidth = Math.max(30, Math.min(200, newColumnWidth))
+            }
+
+            if (newColumnWidth !== gantt.config.min_column_width) {
+              gantt.config.min_column_width = newColumnWidth
+              gantt.render()
+            }
+          }
+        }, { passive: false })
       })
     }
 
@@ -516,8 +512,13 @@ export default {
       emit('task-create', tempTaskData)
     }
 
-    // 顯示右鍵選單
+    // 顯示右鍵選單（空白區域）
     const showContextMenu = (e) => {
+      // 先移除舊的選單（如果有）
+      const oldMenu = document.querySelector('.gantt-context-menu')
+      if (oldMenu && oldMenu.parentNode) {
+        oldMenu.parentNode.removeChild(oldMenu)
+      }
       // 創建簡單的右鍵選單
       const menu = document.createElement('div')
       menu.className = 'gantt-context-menu'
@@ -570,9 +571,130 @@ export default {
       }, 100)
     }
 
+    // 顯示任務右鍵選單
+    const showTaskContextMenu = (e, taskId) => {
+      // 先移除舊的選單（如果有）
+      const oldMenu = document.querySelector('.gantt-context-menu')
+      if (oldMenu && oldMenu.parentNode) {
+        oldMenu.parentNode.removeChild(oldMenu)
+      }
+
+      const task = gantt.getTask(taskId)
+      if (!task) return
+
+      // 創建右鍵選單
+      const menu = document.createElement('div')
+      menu.className = 'gantt-context-menu'
+      menu.style.position = 'fixed'
+      menu.style.left = e.clientX + 'px'
+      menu.style.top = e.clientY + 'px'
+      menu.style.background = 'white'
+      menu.style.border = '1px solid #ccc'
+      menu.style.borderRadius = '4px'
+      menu.style.padding = '4px 0'
+      menu.style.boxShadow = '0 2px 8px rgba(0,0,0,0.15)'
+      menu.style.zIndex = '1000'
+      menu.style.minWidth = '120px'
+
+      // 創建選單項目
+      const menuItems = [
+        { text: '編輯項目', action: 'edit', icon: '✏️' },
+        { text: '新增項目', action: 'add', icon: '➕' },
+        { text: '新增子項目', action: 'addChild', icon: '📁' },
+        { type: 'divider' },
+        { text: '刪除項目', action: 'delete', icon: '🗑️', danger: true }
+      ]
+
+      menuItems.forEach(item => {
+        if (item.type === 'divider') {
+          const divider = document.createElement('div')
+          divider.style.height = '1px'
+          divider.style.background = '#e0e0e0'
+          divider.style.margin = '4px 0'
+          menu.appendChild(divider)
+          return
+        }
+
+        const menuItem = document.createElement('div')
+        menuItem.innerHTML = `${item.icon} ${item.text}`
+        menuItem.style.padding = '8px 16px'
+        menuItem.style.cursor = 'pointer'
+        menuItem.style.fontSize = '13px'
+        menuItem.style.display = 'flex'
+        menuItem.style.alignItems = 'center'
+        menuItem.style.gap = '8px'
+
+        if (item.danger) {
+          menuItem.style.color = '#d32f2f'
+        }
+
+        menuItem.onmouseover = () => {
+          menuItem.style.background = item.danger ? '#ffebee' : '#f0f0f0'
+        }
+        menuItem.onmouseout = () => {
+          menuItem.style.background = 'white'
+        }
+
+        menuItem.onclick = () => {
+          handleTaskContextAction(item.action, taskId, task)
+          if (menu.parentNode) {
+            document.body.removeChild(menu)
+          }
+        }
+
+        menu.appendChild(menuItem)
+      })
+
+      document.body.appendChild(menu)
+
+      // 點擊外部關閉選單
+      const closeMenu = (e) => {
+        if (!menu.contains(e.target)) {
+          if (menu.parentNode) {
+            document.body.removeChild(menu)
+          }
+          document.removeEventListener('click', closeMenu)
+        }
+      }
+
+      setTimeout(() => {
+        document.addEventListener('click', closeMenu)
+      }, 100)
+    }
+
+    // 處理任務右鍵選單動作
+    const handleTaskContextAction = (action, taskId, ganttTask) => {
+      if (action === 'edit') {
+        // 打開編輯對話框
+        emit('task-edit', taskId)
+      } else if (action === 'add') {
+        // 新增同級任務
+        const newTaskData = {
+          startTime: ganttTask.start_date ? getLocalDateTimeString(ganttTask.start_date) : getLocalDateTimeString(new Date()),
+          endTime: ganttTask.end_date ? getLocalDateTimeString(ganttTask.end_date) : getLocalDateTimeString(new Date(Date.now() + 24 * 60 * 60 * 1000)),
+          title: '新任務',
+          parentId: ganttTask.parent === 0 ? null : ganttTask.parent
+        }
+        emit('task-create', newTaskData)
+      } else if (action === 'addChild') {
+        // 新增子任務
+        const childTaskData = {
+          startTime: ganttTask.start_date ? getLocalDateTimeString(ganttTask.start_date) : getLocalDateTimeString(new Date()),
+          endTime: ganttTask.end_date ? getLocalDateTimeString(ganttTask.end_date) : getLocalDateTimeString(new Date(Date.now() + 24 * 60 * 60 * 1000)),
+          title: '新子任務',
+          parentId: taskId
+        }
+        emit('task-create', childTaskData)
+      } else if (action === 'delete') {
+        // 刪除任務
+        if (confirm(`確定要刪除任務「${ganttTask.text}」嗎？`)) {
+          taskStore.deleteTask(taskId)
+        }
+      }
+    }
+
     // Setup filtering functionality
     const setupFiltering = () => {
-      console.log('Setting up filtering...')
 
       // 先移除可能存在的舊事件
       if (filterEventId) {
@@ -582,7 +704,6 @@ export default {
       filterEventId = gantt.attachEvent('onBeforeTaskDisplay', (id) => {
         const taskData = taskStore.getTaskById(id)
         if (!taskData) {
-          console.log('No task data found for id:', id)
           return true // 如果找不到任務資料，顯示任務
         }
 
@@ -596,7 +717,6 @@ export default {
           const matchAssignee = taskData.assignee && taskData.assignee.toLowerCase().includes(search)
 
           if (!matchTitle && !matchDescription && !matchAssignee) {
-            console.log('Task', id, 'filtered out by search:', search)
             return false
           }
         }
@@ -689,17 +809,8 @@ export default {
 
     // Apply filters to gantt chart
     const applyFilters = () => {
-      console.log('Applying filters:', props.filters, 'ganttInstance:', ganttInstance)
       if (ganttInstance) {
-        console.log('Applying filters:', props.filters)
-
-        // 先嘗試簡單的測試過濾
-        if (props.filters && props.filters.status) {
-          console.log('Applying status filter:', props.filters.status)
-        }
-
         gantt.render() // 使用 render() 而非 refreshData() 來觸發過濾事件
-        console.log('Gantt rendered after filter change')
       }
     }
 
@@ -732,6 +843,10 @@ export default {
         }
         ganttInstance = false
       }
+      const scaleEl = ganttContainer.value?.querySelector('.gantt_scale')
+      if (scaleEl && scaleWheelListener) {
+        scaleEl.removeEventListener('wheel', scaleWheelListener)
+      }
     })
 
     // Public methods
@@ -739,7 +854,6 @@ export default {
       if (ganttInstance) {
         gantt.clearAll()
         const data = ganttData.value
-        console.log('Refreshing Gantt with data:', data)
         gantt.parse(data)
         gantt.render()
         gantt.setSizes()
@@ -870,6 +984,42 @@ export default {
   height: calc(100vh - 250px);
   min-height: 400px;
   background: white;
+}
+
+/* 右鍵選單樣式 */
+:global(.gantt-context-menu) {
+  background: white;
+  border: 1px solid #e0e0e0;
+  border-radius: 6px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  font-family: inherit;
+  user-select: none;
+  overflow: hidden;
+}
+
+:global(.gantt-context-menu .menu-item) {
+  padding: 10px 16px;
+  cursor: pointer;
+  font-size: 13px;
+  transition: background-color 0.2s;
+}
+
+:global(.gantt-context-menu .menu-item:hover) {
+  background-color: #f5f5f5;
+}
+
+:global(.gantt-context-menu .menu-item.danger) {
+  color: #d32f2f;
+}
+
+:global(.gantt-context-menu .menu-item.danger:hover) {
+  background-color: #ffebee;
+}
+
+:global(.gantt-context-menu .divider) {
+  height: 1px;
+  background: #e0e0e0;
+  margin: 4px 0;
 }
 
 /* Responsive adjustments */
