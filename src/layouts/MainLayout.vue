@@ -18,9 +18,9 @@
         <!-- User info and auth buttons -->
         <div class="row items-center q-gutter-sm">
           <!-- Sync status indicator -->
-          <q-chip 
+          <q-chip
             v-if="taskStore.authToken"
-            :icon="syncStatusIcon" 
+            :icon="syncStatusIcon"
             :color="syncStatusColor"
             size="sm"
             :title="syncStatusText"
@@ -46,9 +46,9 @@
                     <q-item-label caption>{{ authStore.user?.email }}</q-item-label>
                   </q-item-section>
                 </q-item>
-                
+
                 <q-separator />
-                
+
                 <q-item clickable @click="logout">
                   <q-item-section avatar>
                     <q-icon name="logout" />
@@ -82,13 +82,7 @@
                 </q-item-section>
                 <q-item-section>清除所有資料</q-item-section>
               </q-item>
-              
-              <q-item clickable @click="resetSampleData">
-                <q-item-section avatar>
-                  <q-icon name="restore" />
-                </q-item-section>
-                <q-item-section>重置範例資料</q-item-section>
-              </q-item>
+
             </q-list>
           </q-menu>
         </q-btn>
@@ -107,6 +101,20 @@
 
         <q-item
           clickable
+          :to="{ name: 'projects' }"
+          active-class="text-primary"
+        >
+          <q-item-section avatar>
+            <q-icon name="folder" />
+          </q-item-section>
+          <q-item-section>
+            <q-item-label>專案管理</q-item-label>
+            <q-item-label caption>管理所有專案</q-item-label>
+          </q-item-section>
+        </q-item>
+
+        <q-item
+          clickable
           :to="{ name: 'task-manager' }"
           active-class="text-primary"
         >
@@ -115,7 +123,7 @@
           </q-item-section>
           <q-item-section>
             <q-item-label>任務管理</q-item-label>
-            <q-item-label caption>管理任務和項目</q-item-label>
+            <q-item-label caption>管理當前專案任務</q-item-label>
           </q-item-section>
         </q-item>
 
@@ -190,22 +198,33 @@
     <q-page-container>
       <router-view />
     </q-page-container>
+
+    <!-- Project creation dialog -->
+    <ProjectDialog
+      v-model="showCreateProjectDialog"
+      @project-created="onProjectCreated"
+    />
   </q-layout>
 </template>
 
 <script setup>
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useTaskStore } from 'src/stores/taskStore'
 import { useAuthStore } from 'src/stores/authStore'
+import { useProjectStore } from 'src/stores/projectStore'
 import { useQuasar } from 'quasar'
+import ProjectDialog from 'src/components/ProjectDialog.vue'
 
 const router = useRouter()
 const taskStore = useTaskStore()
 const authStore = useAuthStore()
+const projectStore = useProjectStore()
 const $q = useQuasar()
 
 const leftDrawerOpen = ref(false)
+const selectedProject = ref(null)
+const showCreateProjectDialog = ref(false)
 
 // Computed properties for task statistics
 const completedTasksCount = computed(() => {
@@ -250,6 +269,20 @@ function toggleLeftDrawer() {
   leftDrawerOpen.value = !leftDrawerOpen.value
 }
 
+// Project methods
+async function onProjectChange(project) {
+  if (project) {
+    projectStore.setCurrentProject(project)
+    await taskStore.setCurrentProject(project.id)
+  }
+}
+
+function onProjectCreated(project) {
+  selectedProject.value = project
+  onProjectChange(project)
+  showCreateProjectDialog.value = false
+}
+
 function createNewTask() {
   // Navigate to task manager and trigger new task creation
   router.push({ name: 'task-manager' })
@@ -280,24 +313,6 @@ function clearAllData() {
   })
 }
 
-function resetSampleData() {
-  $q.dialog({
-    title: '重置範例資料',
-    message: '這將清除現有資料並載入範例任務。確定要繼續嗎？',
-    cancel: true,
-    persistent: true
-  }).onOk(() => {
-    localStorage.removeItem('task-manager-data')
-    taskStore.$reset()
-    taskStore.initializeSampleData()
-    $q.notify({
-      message: '範例資料已重置',
-      color: 'positive',
-      icon: 'restore'
-    })
-  })
-}
-
 // Auth related methods
 function goToLogin() {
   router.push('/login')
@@ -319,4 +334,28 @@ async function logout() {
     router.push('/login')
   })
 }
+
+// Initialize data on mount
+onMounted(async () => {
+  if (authStore.isAuthenticated) {
+    await projectStore.loadProjects()
+
+    // Set initial project if available
+    if (projectStore.currentProject) {
+      selectedProject.value = projectStore.currentProject
+    } else if (taskStore.currentProjectId) {
+      // Try to find project by stored currentProjectId
+      const storedProject = projectStore.projects.find(p => p.id === taskStore.currentProjectId)
+      if (storedProject) {
+        selectedProject.value = storedProject
+        // Load tasks for this project immediately
+        await taskStore.loadTasksFromServer()
+      }
+    } else if (projectStore.projects.length > 0) {
+      const firstProject = projectStore.projects[0]
+      selectedProject.value = firstProject
+      await onProjectChange(firstProject)
+    }
+  }
+})
 </script>

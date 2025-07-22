@@ -14,6 +14,15 @@ const routes = [
     children: [
       { 
         path: '', 
+        redirect: '/projects'
+      },
+      { 
+        path: 'projects', 
+        name: 'projects',
+        component: () => import('pages/ProjectListPage.vue') 
+      },
+      { 
+        path: 'tasks', 
         name: 'task-manager',
         component: () => import('pages/TaskManagerPage.vue') 
       },

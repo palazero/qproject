@@ -1,4 +1,5 @@
 import { api } from 'src/boot/axios'
+import { Notify } from 'quasar'
 
 export class AuthService {
   constructor() {
@@ -53,9 +54,15 @@ export class AuthService {
 
       return { success: true, user, token }
     } catch (error) {
+      const errorMsg = error.response?.data?.error || 'Login failed'
+      Notify.create({
+        type: 'negative',
+        message: `登入失敗: ${errorMsg}`,
+        position: 'top'
+      })
       return {
         success: false,
-        error: error.response?.data?.error || 'Login failed'
+        error: errorMsg
       }
     }
   }
@@ -72,9 +79,15 @@ export class AuthService {
 
       return { success: true, user, token }
     } catch (error) {
+      const errorMsg = error.response?.data?.error || 'Registration failed'
+      Notify.create({
+        type: 'negative',
+        message: `註冊失敗: ${errorMsg}`,
+        position: 'top'
+      })
       return {
         success: false,
-        error: error.response?.data?.error || 'Registration failed'
+        error: errorMsg
       }
     }
   }
@@ -88,6 +101,11 @@ export class AuthService {
       }
     } catch (error) {
       console.warn('Logout API call failed:', error)
+      Notify.create({
+        type: 'warning',
+        message: `登出API呼叫失敗: ${error.message}`,
+        position: 'top'
+      })
     } finally {
       this.clearUserFromStorage()
     }
@@ -105,6 +123,11 @@ export class AuthService {
       return { success: true, token }
     } catch (error) {
       this.clearUserFromStorage()
+      Notify.create({
+        type: 'negative',
+        message: `刷新令牌失敗: ${error.message}`,
+        position: 'top'
+      })
       return { success: false }
     }
   }
@@ -118,6 +141,11 @@ export class AuthService {
       return response.data.valid
     } catch (error) {
       this.clearUserFromStorage()
+      Notify.create({
+        type: 'warning',
+        message: `令牌驗證失敗: ${error.message}`,
+        position: 'top'
+      })
       return false
     }
   }

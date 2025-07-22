@@ -1,5 +1,5 @@
 <template>
-  <q-page class="flex flex-center">
+  <div class="login-container flex flex-center">
     <q-card class="q-pa-lg" style="min-width: 400px">
       <q-card-section class="text-center">
         <div class="text-h4 text-primary q-mb-md">
@@ -106,7 +106,7 @@
         </q-banner>
       </q-card-section>
     </q-card>
-  </q-page>
+  </div>
 </template>
 
 <script>
@@ -224,7 +224,8 @@ export default {
 </script>
 
 <style scoped>
-.q-page {
+.login-container {
+  min-height: 100vh;
   background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
 }
 

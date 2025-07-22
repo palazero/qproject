@@ -139,15 +139,7 @@ export const useProjectStore = defineStore('project', {
       }
 
       try {
-        // Include project member data for the creator
-        const projectDataWithMember = {
-          ...projectWithId,
-          owner: {
-            joined_at: new Date().toISOString(),
-            role: 'owner'
-          }
-        }
-        const newProject = await projectService.createProject(projectDataWithMember)
+        const newProject = await projectService.createProject(projectWithId)
         // Use returned project data if server modifies it, otherwise use local data
         const finalProject = newProject.id ? newProject : projectWithId
         

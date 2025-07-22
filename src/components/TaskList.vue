@@ -94,13 +94,9 @@ export default {
     // Local reactive copy of tasks for draggable
     const localTasks = computed({
       get: () => props.tasks,
-      set: (newTasks) => {
-        // Update task order in store
-        newTasks.forEach((task, index) => {
-          if (task.sortOrder !== index + 1) {
-            taskStore.updateTask(task.id, { sortOrder: index + 1 })
-          }
-        })
+      set: () => {
+        // Don't handle updates here, let onDragChange handle all drag operations
+        // This prevents double updates and conflicts with updateTaskOrder
       }
     })
 
@@ -118,9 +114,12 @@ export default {
 
     // Handle drag change event (more reliable for cross-level drops)
     const onDragChange = (event) => {
+      console.log('[TaskList] onDragChange:', event)
+      
       if (event.added) {
         // Task was added to this list
         const { element: task, newIndex } = event.added
+        console.log('[TaskList] Task added:', task.id, 'newIndex:', newIndex, 'parentId:', props.parentId)
 
         // Update the task's parent and sort order
         taskStore.updateTaskOrder(task.id, props.parentId, newIndex)
@@ -129,10 +128,16 @@ export default {
       if (event.moved) {
         // Task was moved within this list
         const { element: task, newIndex } = event.moved
+        console.log('[TaskList] Task moved:', task.id, 'newIndex:', newIndex, 'parentId:', props.parentId)
 
         // Update sort order only
         taskStore.updateTaskOrder(task.id, props.parentId, newIndex)
       }
+      
+      // Force a small delay to see if UI updates after drag
+      setTimeout(() => {
+        console.log('[TaskList] Post-drag tasks length:', props.tasks.length)
+      }, 100)
     }
 
     // Handle drag end event (fallback)

@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia'
 import { authService } from 'src/services/authService'
 import { useTaskStore } from './taskStore'
+import { Notify } from 'quasar'
 
 export const useAuthStore = defineStore('auth', {
   state: () => ({
@@ -8,7 +9,7 @@ export const useAuthStore = defineStore('auth', {
     token: authService.getToken(),
     isAuthenticated: authService.isAuthenticated(),
     isLoading: false,
-    error: null
+    error: null,
   }),
 
   getters: {
@@ -17,7 +18,7 @@ export const useAuthStore = defineStore('auth', {
     },
     userId: (state) => {
       return state.user?.id
-    }
+    },
   },
 
   actions: {
@@ -42,7 +43,7 @@ export const useAuthStore = defineStore('auth', {
 
       try {
         const result = await authService.login(credentials)
-        
+
         if (result.success) {
           this.user = result.user
           this.token = result.token
@@ -58,8 +59,13 @@ export const useAuthStore = defineStore('auth', {
           return { success: false, error: result.error }
         }
       } catch (error) {
-        this.error = 'Login failed'
-        return { success: false, error: 'Login failed' }
+        this.error = '登入失敗'
+        Notify.create({
+          type: 'negative',
+          message: `登入失敗，請檢查網路連線或稍後再試: ${error.message}`,
+          position: 'top',
+        })
+        return { success: false, error: '登入失敗' }
       } finally {
         this.isLoading = false
       }
@@ -72,7 +78,7 @@ export const useAuthStore = defineStore('auth', {
 
       try {
         const result = await authService.register(userData)
-        
+
         if (result.success) {
           this.user = result.user
           this.token = result.token
@@ -88,8 +94,13 @@ export const useAuthStore = defineStore('auth', {
           return { success: false, error: result.error }
         }
       } catch (error) {
-        this.error = 'Registration failed'
-        return { success: false, error: 'Registration failed' }
+        this.error = '註冊失敗'
+        Notify.create({
+          type: 'negative',
+          message: `註冊失敗，請檢查網路連線或稍後再試: ${error.message}`,
+          position: 'top',
+        })
+        return { success: false, error: '註冊失敗' }
       } finally {
         this.isLoading = false
       }
@@ -103,6 +114,11 @@ export const useAuthStore = defineStore('auth', {
         await authService.logout()
       } catch (error) {
         console.warn('Logout failed:', error)
+        Notify.create({
+          type: 'warning',
+          message: '登出時發生錯誤，但已清除本地資料',
+          position: 'top',
+        })
       } finally {
         this.user = null
         this.token = null
@@ -130,6 +146,6 @@ export const useAuthStore = defineStore('auth', {
     setUser(user) {
       this.user = user
       authService.saveUserToStorage(user)
-    }
-  }
+    },
+  },
 })

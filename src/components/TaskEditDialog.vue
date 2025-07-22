@@ -1,20 +1,20 @@
 <template>
-  <q-dialog v-model="show" persistent max-width="900px" class="task-dialog-wrapper">
+  <q-dialog v-model="show" persistent max-width="700px" class="task-dialog-wrapper">
     <q-card class="task-edit-dialog">
       <!-- Enhanced Header -->
       <q-card-section class="dialog-header">
         <div class="row items-center no-wrap">
-          <q-icon 
-            :name="isEditing ? 'edit' : 'add_task'" 
-            size="24px" 
+          <q-icon
+            :name="isEditing ? 'edit' : 'add_task'"
+            size="24px"
             :color="isEditing ? 'primary' : 'positive'"
             class="q-mr-sm"
           />
           <div>
-            <div class="text-h6 text-weight-medium">
+            <div class="text-subtitle1 text-weight-medium">
               {{ isEditing ? '編輯任務' : '新增任務' }}
             </div>
-            <div class="text-caption text-grey-6" v-if="isEditing">
+            <div class="text-caption text-grey-6 q-mt-xs" v-if="isEditing" style="font-size: 10px;">
               任務ID: {{ taskId }}
             </div>
           </div>
@@ -24,10 +24,10 @@
       </q-card-section>
 
       <!-- Progress Indicator -->
-      <q-linear-progress 
-        v-if="saving" 
-        indeterminate 
-        color="primary" 
+      <q-linear-progress
+        v-if="saving"
+        indeterminate
+        color="primary"
         class="loading-bar"
       />
 
@@ -39,7 +39,7 @@
               <q-icon name="info" color="primary" size="20px" />
               <span class="section-title">基本資訊</span>
             </div>
-            
+
             <div class="section-content">
               <!-- Task Title -->
               <q-input
@@ -49,7 +49,8 @@
                 dense
                 :rules="[val => !!val || '請輸入任務標題']"
                 ref="titleInput"
-                class="title-input"
+                class="title-input compact-input"
+                hide-bottom-space
               >
                 <template v-slot:prepend>
                   <q-icon name="title" color="grey-6" />
@@ -63,8 +64,9 @@
                 outlined
                 dense
                 type="textarea"
-                rows="3"
-                class="description-input"
+                rows="2"
+                class="description-input compact-input"
+                hide-bottom-space
               >
                 <template v-slot:prepend>
                   <q-icon name="description" color="grey-6" />
@@ -83,6 +85,8 @@
                 clearable
                 emit-value
                 map-options
+                class="compact-input"
+                hide-bottom-space
               >
                 <template v-slot:prepend>
                   <q-icon name="account_tree" color="grey-6" />
@@ -97,9 +101,9 @@
               <q-icon name="schedule" color="primary" size="20px" />
               <span class="section-title">時程安排</span>
             </div>
-            
+
             <div class="section-content">
-              <div class="row q-gutter-md">
+              <div class="row q-col-gutter-sm">
                 <div class="col">
                   <q-input
                     v-model="formData.startTime"
@@ -107,6 +111,8 @@
                     outlined
                     dense
                     type="datetime-local"
+                    class="compact-input"
+                    hide-bottom-space
                   >
                     <template v-slot:prepend>
                       <q-icon name="play_arrow" color="green" />
@@ -121,6 +127,8 @@
                     dense
                     type="datetime-local"
                     :rules="[validateEndTime]"
+                    class="compact-input"
+                    hide-bottom-space
                   >
                     <template v-slot:prepend>
                       <q-icon name="stop" color="red" />
@@ -137,22 +145,24 @@
               <q-icon name="assignment" color="primary" size="20px" />
               <span class="section-title">指派與狀態</span>
             </div>
-            
+
             <div class="section-content">
-              <div class="row q-gutter-md">
+              <div class="row q-col-gutter-sm">
                 <div class="col-12 col-md-6">
                   <q-input
                     v-model="formData.assignee"
                     label="執行人"
                     outlined
                     dense
+                    class="compact-input"
+                    hide-bottom-space
                   >
                     <template v-slot:prepend>
                       <q-icon name="person" color="grey-6" />
                     </template>
                   </q-input>
                 </div>
-                
+
                 <div class="col-12 col-md-3">
                   <q-select
                     v-model="formData.status"
@@ -162,16 +172,18 @@
                     dense
                     emit-value
                     map-options
+                    class="compact-input"
+                    hide-bottom-space
                   >
                     <template v-slot:prepend>
-                      <q-icon 
-                        :name="getStatusIcon(formData.status)" 
-                        :color="getStatusColor(formData.status)" 
+                      <q-icon
+                        :name="getStatusIcon(formData.status)"
+                        :color="getStatusColor(formData.status)"
                       />
                     </template>
                   </q-select>
                 </div>
-                
+
                 <div class="col-12 col-md-3">
                   <q-select
                     v-model="formData.priority"
@@ -181,11 +193,13 @@
                     dense
                     emit-value
                     map-options
+                    class="compact-input"
+                    hide-bottom-space
                   >
                     <template v-slot:prepend>
-                      <q-icon 
-                        name="flag" 
-                        :color="getPriorityColor(formData.priority)" 
+                      <q-icon
+                        name="flag"
+                        :color="getPriorityColor(formData.priority)"
                       />
                     </template>
                   </q-select>
@@ -200,7 +214,7 @@
               <q-icon name="link" color="primary" size="20px" />
               <span class="section-title">標籤與依賴</span>
             </div>
-            
+
             <div class="section-content">
               <!-- Tags -->
               <q-select
@@ -215,6 +229,8 @@
                 input-debounce="0"
                 new-value-mode="add-unique"
                 @new-value="addNewTag"
+                class="compact-input"
+                hide-bottom-space
               >
                 <template v-slot:prepend>
                   <q-icon name="label" color="grey-6" />
@@ -235,6 +251,8 @@
                 emit-value
                 map-options
                 :rules="[validateDependencies]"
+                class="compact-input"
+                hide-bottom-space
               >
                 <template v-slot:prepend>
                   <q-icon name="device_hub" color="grey-6" />
@@ -260,30 +278,30 @@
       <!-- Enhanced Actions -->
       <q-card-actions class="dialog-actions">
         <div class="actions-left">
-          <q-btn 
-            flat 
-            icon="delete" 
-            label="刪除任務" 
-            color="negative" 
+          <q-btn
+            flat
+            icon="delete"
+            label="刪除任務"
+            color="negative"
             v-if="isEditing"
             @click="confirmDelete"
             class="delete-btn"
           />
         </div>
-        
+
         <div class="actions-right">
-          <q-btn 
-            flat 
+          <q-btn
+            flat
             icon="close"
-            label="取消" 
-            v-close-popup 
+            label="取消"
+            v-close-popup
             class="cancel-btn"
           />
-          <q-btn 
-            unelevated 
-            :icon="isEditing ? 'save' : 'add'" 
-            :label="isEditing ? '更新任務' : '建立任務'" 
-            color="primary" 
+          <q-btn
+            unelevated
+            :icon="isEditing ? 'save' : 'add'"
+            :label="isEditing ? '更新任務' : '建立任務'"
+            color="primary"
             @click="onSubmit"
             :loading="saving"
             class="submit-btn"
@@ -297,11 +315,12 @@
 <script>
 import { ref, computed, watch, nextTick } from 'vue'
 import { useTaskStore } from 'src/stores/taskStore'
+import { useProjectStore } from 'src/stores/projectStore'
 import { useQuasar } from 'quasar'
 
 export default {
   name: 'TaskEditDialog',
-  
+
   props: {
     modelValue: {
       type: Boolean,
@@ -320,22 +339,23 @@ export default {
       default: null
     }
   },
-  
+
   emits: ['update:modelValue', 'task-saved', 'task-deleted'],
-  
+
   setup(props, { emit }) {
     const taskStore = useTaskStore()
+    const projectStore = useProjectStore()
     const $q = useQuasar()
-    
+
     const titleInput = ref(null)
     const saving = ref(false)
-    
+
     // Dialog visibility
     const show = computed({
       get: () => props.modelValue,
       set: (val) => emit('update:modelValue', val)
     })
-    
+
     // Form data
     const formData = ref({
       title: '',
@@ -349,10 +369,10 @@ export default {
       tags: [],
       dependencies: []
     })
-    
+
     // Check if editing existing task
     const isEditing = computed(() => !!props.taskId)
-    
+
     // Status options
     const statusOptions = [
       { label: '待辦', value: 'todo' },
@@ -360,23 +380,23 @@ export default {
       { label: '已完成', value: 'done' },
       { label: '阻塞', value: 'blocked' }
     ]
-    
+
     // Priority options
     const priorityOptions = [
       { label: '低', value: 'low' },
       { label: '中', value: 'medium' },
       { label: '高', value: 'high' }
     ]
-    
+
     // Tag options
     const tagOptions = computed(() => {
       return taskStore.tags.map(tag => tag)
     })
-    
+
     // Parent task options
     const parentOptions = computed(() => {
       const options = []
-      
+
       const buildOptions = (tasks, level = 0) => {
         tasks.forEach(task => {
           // Don't allow circular parent relationships
@@ -385,27 +405,27 @@ export default {
               label: '　'.repeat(level) + task.title,
               value: task.id
             })
-            
+
             if (task.children && task.children.length > 0) {
               buildOptions(task.children, level + 1)
             }
           }
         })
       }
-      
+
       buildOptions(taskStore.taskTree)
       return options
     })
-    
+
     // Dependency options (exclude self and descendants)
     const dependencyOptions = computed(() => {
       const options = []
       const excludeIds = new Set()
-      
+
       // If editing, exclude self and descendants
       if (props.taskId) {
         excludeIds.add(props.taskId)
-        
+
         const addDescendants = (taskId) => {
           const task = taskStore.getTaskById(taskId)
           if (task && task.children) {
@@ -415,10 +435,10 @@ export default {
             })
           }
         }
-        
+
         addDescendants(props.taskId)
       }
-      
+
       taskStore.tasks.forEach(task => {
         if (!excludeIds.has(task.id)) {
           options.push({
@@ -427,47 +447,47 @@ export default {
           })
         }
       })
-      
+
       return options
     })
-    
+
     // Dependency warning
     const dependencyWarning = computed(() => {
       if (!formData.value.dependencies.length) return null
-      
+
       const incompleteDeps = formData.value.dependencies.filter(depId => {
         const depTask = taskStore.getTaskById(depId)
         return depTask && depTask.status !== 'done'
       })
-      
+
       if (incompleteDeps.length > 0 && formData.value.status === 'done') {
         return '注意：有未完成的依賴任務，無法標記為已完成'
       }
-      
+
       return null
     })
-    
+
     // Validation
     const validateEndTime = (val) => {
       if (!val || !formData.value.startTime) return true
-      
+
       const start = new Date(formData.value.startTime)
       const end = new Date(val)
-      
+
       return end >= start || '結束時間不能早於開始時間'
     }
-    
+
     const validateDependencies = (val) => {
       if (!val || val.length === 0) return true
-      
+
       // Check for circular dependencies
       if (props.taskId && taskStore.hasCircularDependency(props.taskId, val)) {
         return '無法建立循環依賴關係'
       }
-      
+
       return true
     }
-    
+
     // Methods
     const loadTaskData = () => {
       if (props.taskId) {
@@ -502,37 +522,38 @@ export default {
         }
       }
     }
-    
+
     const formatDateTimeLocal = (isoString) => {
       if (!isoString) return ''
-      
+
       const date = new Date(isoString)
       const year = date.getFullYear()
       const month = String(date.getMonth() + 1).padStart(2, '0')
       const day = String(date.getDate()).padStart(2, '0')
       const hours = String(date.getHours()).padStart(2, '0')
       const minutes = String(date.getMinutes()).padStart(2, '0')
-      
+
       return `${year}-${month}-${day}T${hours}:${minutes}`
     }
-    
+
     const addNewTag = (val, done) => {
       if (val.length > 0) {
         taskStore.addTag(val)
         done(val, 'add-unique')
       }
     }
-    
+
     const onSubmit = async () => {
       saving.value = true
-      
+
       try {
         const taskData = {
           ...formData.value,
+          projectId: projectStore.currentProjectId,
           startTime: formData.value.startTime ? new Date(formData.value.startTime).toISOString() : null,
           endTime: formData.value.endTime ? new Date(formData.value.endTime).toISOString() : null
         }
-        
+
         if (isEditing.value) {
           taskStore.updateTask(props.taskId, taskData)
           $q.notify({
@@ -548,7 +569,7 @@ export default {
             icon: 'add_circle'
           })
         }
-        
+
         emit('task-saved')
         show.value = false
       } catch (error) {
@@ -561,7 +582,7 @@ export default {
         saving.value = false
       }
     }
-    
+
     const confirmDelete = () => {
       $q.dialog({
         title: '確認刪除',
@@ -609,7 +630,7 @@ export default {
       }
       return colors[priority] || 'orange'
     }
-    
+
     // Watch for dialog open/close
     watch(show, async (newVal) => {
       if (newVal) {
@@ -619,7 +640,7 @@ export default {
         titleInput.value?.focus()
       }
     })
-    
+
     return {
       show,
       titleInput,
@@ -653,17 +674,17 @@ export default {
 
 .task-edit-dialog {
   width: 100%;
-  max-width: 900px;
-  border-radius: 12px;
+  max-width: 700px;
+  border-radius: 8px;
   overflow: hidden;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.12);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
 }
 
 /* Header Styling */
 .dialog-header {
   background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
   border-bottom: 1px solid #e1e5e9;
-  padding: 20px 24px;
+  padding: 12px 16px;
 }
 
 .close-btn {
@@ -682,16 +703,16 @@ export default {
 
 /* Content Area */
 .dialog-content {
-  max-height: 70vh;
+  max-height: 65vh;
   overflow-y: auto;
-  padding: 24px;
+  padding: 8px;
   background: #fafbfc;
 }
 
 .form-container {
   display: flex;
   flex-direction: column;
-  gap: 24px;
+  gap: 12px;
 }
 
 /* Form Sections */
@@ -711,8 +732,8 @@ export default {
 .section-header {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 12px 16px;
+  gap: 6px;
+  padding: 8px 12px;
   background: #f8f9fa;
   border-bottom: 1px solid #e1e5e9;
 }
@@ -720,14 +741,14 @@ export default {
 .section-title {
   font-weight: 600;
   color: #2c3e50;
-  font-size: 14px;
+  font-size: 12px;
 }
 
 .section-content {
-  padding: 16px;
+  padding: 8px;
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 8px;
 }
 
 /* Input Enhancements */
@@ -735,15 +756,28 @@ export default {
   font-weight: 500;
 }
 
+.compact-input :deep(.q-field__control) {
+  min-height: 36px;
+}
+
+.compact-input :deep(.q-field__label) {
+  font-size: 12px;
+}
+
+.compact-input :deep(.q-field__native) {
+  font-size: 13px;
+  padding: 4px 8px;
+}
+
 .description-input :deep(.q-field__control) {
-  min-height: 80px;
+  min-height: 60px;
 }
 
 /* Actions Section */
 .dialog-actions {
   background: white;
   border-top: 1px solid #e1e5e9;
-  padding: 16px 24px;
+  padding: 12px 16px;
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -755,7 +789,7 @@ export default {
 
 .actions-right {
   display: flex;
-  gap: 8px;
+  gap: 6px;
 }
 
 .delete-btn {
@@ -831,41 +865,41 @@ export default {
 /* Responsive adjustments */
 @media (max-width: 768px) {
   .task-edit-dialog {
-    margin: 8px;
-    max-width: calc(100vw - 16px);
-    border-radius: 8px;
+    margin: 4px;
+    max-width: calc(100vw - 8px);
+    border-radius: 6px;
   }
-  
+
   .dialog-header {
-    padding: 16px;
+    padding: 10px 12px;
   }
-  
+
   .dialog-content {
-    padding: 16px;
-    max-height: 75vh;
-  }
-  
-  .form-container {
-    gap: 16px;
-  }
-  
-  .section-content {
     padding: 12px;
-    gap: 12px;
+    max-height: 70vh;
   }
-  
+
+  .form-container {
+    gap: 4px;
+  }
+
+  .section-content {
+    padding: 8px;
+    gap: 4px;
+  }
+
   .dialog-actions {
-    padding: 12px 16px;
+    padding: 8px 12px;
     flex-direction: column;
-    gap: 8px;
+    gap: 4px;
   }
-  
+
   .actions-left,
   .actions-right {
     width: 100%;
     justify-content: center;
   }
-  
+
   .actions-right {
     flex-direction: row-reverse;
   }
@@ -877,21 +911,21 @@ export default {
     background: linear-gradient(135deg, #2c3e50 0%, #34495e 100%);
     color: white;
   }
-  
+
   .dialog-content {
     background: #2c3e50;
   }
-  
+
   .form-section {
     background: #34495e;
     border-color: #455a64;
   }
-  
+
   .section-header {
     background: #455a64;
     border-color: #546e7a;
   }
-  
+
   .section-title {
     color: #ecf0f1;
   }

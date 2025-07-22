@@ -38,13 +38,6 @@
               @click="refreshData"
             />
 
-            <q-btn
-              color="orange"
-              icon="restore"
-              size="sm"
-              label="重置範例"
-              @click="resetSampleData"
-            />
 
             <!-- Export Options -->
             <q-btn-dropdown
@@ -436,7 +429,13 @@ export default {
     }
 
     // Utility methods
-    const refreshData = () => {
+    const refreshData = async () => {
+      if (taskStore.currentProjectId) {
+        // 強制全量載入
+        taskStore.lastUpdated = null
+        await taskStore.loadTasksFromServer()
+      }
+
       if (currentView.value === 'gantt' && ganttRef.value) {
         ganttRef.value.refreshGantt()
       }
@@ -448,29 +447,6 @@ export default {
       })
     }
 
-    const resetSampleData = () => {
-      $q.dialog({
-        title: '重置範例資料',
-        message: '確定要重置為新的多階層範例資料嗎？現有資料將被清除。',
-        cancel: true,
-        persistent: true
-      }).onOk(() => {
-        taskStore.resetSampleData()
-
-        // Refresh gantt if in gantt view
-        if (currentView.value === 'gantt' && ganttRef.value) {
-          setTimeout(() => {
-            ganttRef.value.refreshGantt()
-          }, 100)
-        }
-
-        $q.notify({
-          message: '已重置為多階層範例資料',
-          color: 'positive',
-          icon: 'restore'
-        })
-      })
-    }
 
     const exportTasks = (format) => {
       try {
@@ -536,8 +512,9 @@ export default {
 
     // Lifecycle
     onMounted(() => {
-      // Initialize sample data if no tasks exist
-      taskStore.initializeSampleData()
+      if (taskStore.currentProjectId) {
+        taskStore.loadTasksFromServer()
+      }
     })
 
     // Watch for view changes to refresh gantt
@@ -557,6 +534,13 @@ export default {
       if (shouldShow) {
         showAddTask()
         taskStore.resetCreateTaskDialog()
+      }
+    })
+
+    // Watch for project change，自動載入新專案任務
+    watch(() => taskStore.currentProjectId, (newId) => {
+      if (newId) {
+        taskStore.loadTasksFromServer()
       }
     })
 
@@ -591,7 +575,6 @@ export default {
       onTaskDeleted,
       onGanttTaskUpdated,
       refreshData,
-      resetSampleData,
       exportTasks,
       exportGantt
     }

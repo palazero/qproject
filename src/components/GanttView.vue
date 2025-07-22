@@ -170,6 +170,14 @@ export default {
       }, 100)
     })
 
+    const showTaskForm = (taskId) => {
+      if (taskId) {
+        emit('task-edit', taskId)
+      } else {
+        emit('task-create')
+      }
+    }
+
     const initializeGantt = () => {
       if (!ganttContainer.value) {
         return
@@ -265,7 +273,7 @@ export default {
       gantt.config.drag_resize = true // 啟用拖動調整任務長度
 
       // 禁用內建的 lightbox 編輯器，使用我們自己的對話框
-      gantt.config.lightbox.sections = []
+      gantt.config.showLightbox = showTaskForm
 
       // 啟用zoom擴展
       gantt.ext.zoom.init({
@@ -463,6 +471,10 @@ export default {
       // 新增：用於處理時間軸縮放事件`
       gantt.attachEvent('onGanttReady', function() {
         const scaleEl = ganttContainer.value?.querySelector('.gantt_data_area')
+        if (!scaleEl) {
+          return
+        }
+
         scaleEl.addEventListener('wheel', (e) => {
           if (e.ctrlKey) {
             e.preventDefault()
