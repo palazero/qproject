@@ -1,18 +1,20 @@
 <template>
-  <q-card class="filter-bar q-pa-xs">
-    <div class="row q-gutter-xs items-center">
+  <div class="filter-bar">
+    <div class="row q-gutter-xs items-center" style="min-height: 32px;">
       <!-- Search -->
       <div class="col-12 col-md-auto">
         <q-input
           v-model="searchText"
-          label="搜尋任務"
+          placeholder="搜尋任務"
           outlined
           dense
           clearable
           debounce="300"
+          class="compact-input"
+          style="min-width: 120px;"
         >
           <template v-slot:prepend>
-            <q-icon name="search" />
+            <q-icon name="search" size="xs" />
           </template>
         </q-input>
       </div>
@@ -22,17 +24,17 @@
         <q-select
           v-model="localFilters.status"
           :options="statusOptions"
-          label="狀態篩選"
+          placeholder="狀態"
           outlined
           dense
-          size="sm"
           clearable
           emit-value
           map-options
-          style="min-width: 100px"
+          class="compact-select"
+          style="min-width: 80px"
         >
           <template v-slot:prepend>
-            <q-icon name="assignment" />
+            <q-icon name="assignment" size="xs" />
           </template>
         </q-select>
       </div>
@@ -42,36 +44,36 @@
         <q-select
           v-model="localFilters.priority"
           :options="priorityOptions"
-          label="優先級篩選"
+          placeholder="優先級"
           outlined
           dense
-          size="sm"
           clearable
           emit-value
           map-options
-          style="min-width: 100px"
+          class="compact-select"
+          style="min-width: 80px"
         >
           <template v-slot:prepend>
-            <q-icon name="priority_high" />
+            <q-icon name="priority_high" size="xs" />
           </template>
         </q-select>
       </div>
 
       <!-- Tags Filter -->
-      <div class="col-12 col-md-auto" style="min-width: 160px">
+      <div class="col-12 col-md-auto" style="min-width: 120px">
         <q-select
           v-model="localFilters.tags"
           :options="tagOptions"
-          label="標籤篩選"
+          placeholder="標籤"
           outlined
           dense
-          size="sm"
           multiple
           use-chips
           clearable
+          class="compact-select"
         >
           <template v-slot:prepend>
-            <q-icon name="label" />
+            <q-icon name="label" size="xs" />
           </template>
         </q-select>
       </div>
@@ -80,14 +82,15 @@
       <div class="col-12 col-sm-6 col-md-auto">
         <q-input
           v-model="localFilters.assignee"
-          label="執行人篩選"
+          placeholder="執行人"
           outlined
           dense
           clearable
-          style="min-width: 120px"
+          class="compact-input"
+          style="min-width: 90px"
         >
           <template v-slot:prepend>
-            <q-icon name="person" />
+            <q-icon name="person" size="xs" />
           </template>
         </q-input>
       </div>
@@ -98,8 +101,9 @@
           :label="dateRangeLabel"
           icon="date_range"
           outline
-          size="sm"
+          dense
           no-caps
+          class="compact-btn"
           @click="showDatePicker = true"
         />
 
@@ -145,22 +149,25 @@
           <q-btn
             :color="quickFilter === 'today' ? 'primary' : 'grey-7'"
             label="今日"
-            size="sm"
+            dense
             no-caps
+            class="compact-btn"
             @click="setQuickFilter('today')"
           />
           <q-btn
             :color="quickFilter === 'week' ? 'primary' : 'grey-7'"
             label="本週"
-            size="sm"
+            dense
             no-caps
+            class="compact-btn"
             @click="setQuickFilter('week')"
           />
           <q-btn
             :color="quickFilter === 'overdue' ? 'primary' : 'grey-7'"
             label="逾期"
-            size="sm"
+            dense
             no-caps
+            class="compact-btn"
             @click="setQuickFilter('overdue')"
           />
         </q-btn-group>
@@ -170,17 +177,19 @@
       <div class="col-12 col-md-auto">
         <q-btn
           icon="clear_all"
-          label="清除篩選"
+          label="清除"
           flat
-          size="sm"
+          dense
           color="grey-7"
+          no-caps
+          class="compact-btn"
           @click="clearAllFilters"
         />
       </div>
 
       <!-- Active Filters Display -->
       <div v-if="hasActiveFilters" class="row q-mt-xs q-gutter-xs">
-        <div class="text-caption text-grey-7 q-mr-xs">活躍篩選：</div>
+        <div class="text-caption text-grey-7 q-mr-xs" style="font-size: 9px;">活躍篩選：</div>
 
         <q-chip
           v-if="localFilters.status"
@@ -243,13 +252,16 @@
           搜尋: {{ searchText }}
         </q-chip>
       </div>
+
+      <q-space />
+
+      <!-- Filter Summary -->
+      <div v-if="filteredCount !== totalCount" class="q-mt-xs text-caption text-grey-6" style="font-size: 9px;">
+        顯示 {{ filteredCount }} / {{ totalCount }} 個任務
+      </div>
     </div>
 
-    <!-- Filter Summary -->
-    <div v-if="filteredCount !== totalCount" class="q-mt-xs text-caption text-grey-6">
-      顯示 {{ filteredCount }} / {{ totalCount }} 個任務
-    </div>
-  </q-card>
+  </div>
 </template>
 
 <script>
@@ -500,22 +512,20 @@ export default {
 }
 </script>
 
-<style scoped>
+<style>
 .filter-bar {
   background: #fafafa;
-  border: 1px solid #e0e0e0;
+  padding: 1px 4px;
 }
 
 .flex-grow {
   flex-grow: 1;
 }
 
-/* Compact chip styling */
+/* Ultra compact chip styling */
 .filter-bar .q-chip {
-  font-size: 11px;
-  padding: 2px 6px;
-  height: 20px;
-  min-height: 20px;
+  font-size: 10px;
+  padding: 1px 8px 1px 4px;
 }
 
 .filter-bar .q-chip .q-chip__content {
@@ -523,22 +533,71 @@ export default {
 }
 
 .filter-bar .q-chip .q-icon {
-  font-size: 14px;
-}
-
-/* Compact form controls */
-.filter-bar .q-field {
   font-size: 12px;
 }
 
-.filter-bar .q-field--dense .q-field__control {
-  height: 32px;
+/* Compact form controls - More specific selectors */
+.filter-bar {
+  font-size: 9px !important;
 }
 
-.filter-bar .q-btn {
-  font-size: 11px;
-  padding: 4px 8px;
-  min-height: 32px;
+.filter-bar .q-field--dense .q-field__control,
+.filter-bar .q-field--dense .q-field__marginal,
+.filter-bar .q-field--dense .q-field__native {
+  height: 24px !important;
+  min-height: 24px !important;
+  font-size: 9px !important;
+}
+
+.filter-bar .q-field__native,
+.filter-bar .q-field__input,
+.filter-bar input {
+  font-size: 9px !important;
+  line-height: 1.2 !important;
+  padding: 2px 4px !important;
+}
+
+.filter-bar .q-field__label {
+  font-size: 8px !important;
+}
+
+.filter-bar .q-field__outlined .q-field__control:before {
+  border-width: 1px !important;
+}
+
+/* Force font size on all input elements */
+.filter-bar input,
+.filter-bar textarea,
+.filter-bar .q-field__native,
+.filter-bar .q-field__input {
+  font-size: 9px !important;
+}
+
+.filter-bar .q-field__native .q-chip {
+  padding: 1px 4px;
+}
+
+/* Compact placeholder styling */
+.filter-bar input::placeholder {
+  font-size: 9px !important;
+  color: #9e9e9e;
+}
+
+/* Icon sizing in compact inputs */
+.filter-bar .q-field__prepend .q-icon {
+  font-size: 14px !important;
+}
+
+/* Compact buttons */
+.filter-bar .compact-btn {
+  font-size: 9px;
+  padding: 1px 4px;
+  min-height: 24px;
+  height: 24px;
+}
+
+.filter-bar .q-btn-group .compact-btn {
+  padding: 1px 3px;
 }
 
 /* Responsive adjustments */

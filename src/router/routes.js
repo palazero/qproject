@@ -1,7 +1,16 @@
 const routes = [
+  // Login route (no layout)
+  {
+    path: '/login',
+    name: 'login',
+    component: () => import('pages/LoginPage.vue')
+  },
+
+  // Main app routes (with layout and auth guard)
   {
     path: '/',
     component: () => import('layouts/MainLayout.vue'),
+    meta: { requiresAuth: false }, // Set to true when auth is fully implemented
     children: [
       { 
         path: '', 

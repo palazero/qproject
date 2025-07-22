@@ -90,7 +90,6 @@
     <div class="filter-bar-sticky">
       <FilterBar
         @filter-change="onFilterChange"
-        class="q-mx-xs q-mb-xs"
       />
     </div>
 
@@ -99,12 +98,12 @@
       <!-- List View -->
       <div v-show="currentView === 'list'" class="list-view">
         <!-- List Controls (Fixed) -->
-        <div v-if="displayTasks.length > 0" class="list-controls q-pa-xs bg-grey-1 row justify-between items-center">
+        <div v-if="displayTasks.length > 0" class="list-controls bg-grey-1 row justify-between items-center">
           <div class="row q-gutter-xs">
             <q-btn
               flat
               dense
-              size="xs"
+              size="sm"
               icon="unfold_more"
               :label="$q.screen.xs ? '' : '全部展開'"
               color="primary"
@@ -115,7 +114,7 @@
             <q-btn
               flat
               dense
-              size="xs"
+              size="sm"
               icon="unfold_less"
               :label="$q.screen.xs ? '' : '全部縮合'"
               color="primary"
@@ -644,9 +643,8 @@ export default {
 }
 
 .list-controls {
-  border-bottom: 1px solid #e0e0e0;
-  border-radius: 6px 6px 0 0;
-  min-height: 36px;
+  border-radius: 3px 3px 0 0;
+  min-height: 28px;
   flex-shrink: 0; /* 防止縮小 */
 }
 
@@ -690,7 +688,7 @@ export default {
 .page-header .q-btn {
   font-size: 12px;
   padding: 4px 8px;
-  min-height: 32px;
+  min-height: 28px;
 }
 
 .page-header .q-btn-toggle {
@@ -699,7 +697,7 @@ export default {
 
 .page-header .q-btn-toggle .q-btn {
   padding: 4px 12px;
-  min-height: 32px;
+  min-height: 28px;
 }
 
 /* Mobile specific styles */
