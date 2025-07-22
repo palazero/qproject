@@ -67,6 +67,29 @@ export const useProjectStore = defineStore('project', {
     getCurrentProjectMembers: (state) => {
       if (!state.currentProject) return []
       return state.projectMembers[state.currentProject.id] || []
+    },
+
+    // Project status related getters
+    openProjects: (state) => {
+      return state.projects.filter(project => project.status === 'open')
+    },
+
+    closedProjects: (state) => {
+      return state.projects.filter(project => project.status === 'close')
+    },
+
+    cancelledProjects: (state) => {
+      return state.projects.filter(project => project.status === 'cancel')
+    },
+
+    canCloseProject: (state) => (projectId) => {
+      const role = state.userRole[projectId]
+      return role === 'owner' || role === 'admin'
+    },
+
+    canCancelProject: (state) => (projectId) => {
+      const role = state.userRole[projectId]
+      return role === 'owner'
     }
   },
 
@@ -84,10 +107,13 @@ export const useProjectStore = defineStore('project', {
       try {
         this.syncStatus = 'syncing'
         const data = await projectService.getAllProjects()
-        this.projects = data.projects || []
         
-        if (data.projects?.length > 0 && !this.currentProject) {
-          this.currentProject = data.projects[0]
+        // Only load open projects
+        const allProjects = data.projects || []
+        this.projects = allProjects.filter(project => project.status === 'open')
+        
+        if (this.projects.length > 0 && !this.currentProject) {
+          this.currentProject = this.projects[0]
         }
 
         this.syncStatus = 'idle'
@@ -109,9 +135,10 @@ export const useProjectStore = defineStore('project', {
       const projectWithId = {
         ...projectData,
         id: projectId,
-        status: projectData.status || 'active',
+        status: projectData.status || 'open',
         createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString()
+        updatedAt: new Date().toISOString(),
+        closedAt: null
       }
 
       if (!this.isOnline) {
@@ -265,6 +292,113 @@ export const useProjectStore = defineStore('project', {
           message: `刪除專案失敗: ${error.message}`,
           position: 'top'
         })
+        throw error
+      }
+    },
+
+    // Project status management methods
+    async closeProject(projectId, taskStore) {
+      if (!this.canCloseProject(projectId)) {
+        Notify.create({
+          type: 'warning',
+          message: '您沒有權限關閉此專案',
+          position: 'top'
+        })
+        return false
+      }
+
+      // Check if all tasks are completed
+      const projectTasks = taskStore.getTasksByProject(projectId)
+      const incompleteTasks = projectTasks.filter(task => task.status !== 'done')
+      
+      if (incompleteTasks.length > 0) {
+        Notify.create({
+          type: 'warning',
+          message: `專案仍有 ${incompleteTasks.length} 個未完成任務，無法關閉`,
+          position: 'top'
+        })
+        return false
+      }
+
+      try {
+        const updates = {
+          status: 'close',
+          closedAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString()
+        }
+
+        await this.updateProject(projectId, updates)
+        
+        Notify.create({
+          type: 'positive',
+          message: '專案已關閉',
+          position: 'top'
+        })
+        return true
+      } catch (error) {
+        console.error('Failed to close project:', error)
+        throw error
+      }
+    },
+
+    async cancelProject(projectId) {
+      if (!this.canCancelProject(projectId)) {
+        Notify.create({
+          type: 'warning',
+          message: '只有專案擁有者可以取消專案',
+          position: 'top'
+        })
+        return false
+      }
+
+      try {
+        const updates = {
+          status: 'cancel',
+          closedAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString()
+        }
+
+        await this.updateProject(projectId, updates)
+        
+        Notify.create({
+          type: 'positive',
+          message: '專案已取消',
+          position: 'top'
+        })
+        return true
+      } catch (error) {
+        console.error('Failed to cancel project:', error)
+        throw error
+      }
+    },
+
+    async reopenProject(projectId) {
+      if (!this.canCancelProject(projectId)) { // Same permission as cancel
+        Notify.create({
+          type: 'warning',
+          message: '只有專案擁有者可以重新開啟專案',
+          position: 'top'
+        })
+        return false
+      }
+
+      try {
+        const updates = {
+          status: 'open',
+          closedAt: null,
+          updatedAt: new Date().toISOString()
+        }
+
+        await this.updateProject(projectId, updates)
+        
+        Notify.create({
+          type: 'positive',
+          message: '專案已重新開啟',
+          position: 'top'
+        })
+        return true
+      } catch (error) {
+        console.error('Failed to reopen project:', error)
         throw error
       }
     },

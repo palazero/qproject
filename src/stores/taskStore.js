@@ -397,7 +397,7 @@ export const useTaskStore = defineStore('task', {
 
         const response = await api.get('/tasks', {
           params: {
-            project_id: this.currentProjectId,
+            projectId: this.currentProjectId,
             since: this.lastUpdated,
           },
         })
@@ -546,47 +546,21 @@ export const useTaskStore = defineStore('task', {
     // Execute sync action
     async executeSyncAction(action) {
       if (action.type === 'create') {
-        // Convert frontend format to backend format for create
+        // Backend now uses camelCase, no conversion needed
         const backendTaskData = {
           ...action.data,
-          project_id: this.currentProjectId,
-          // Convert camelCase to snake_case for backend
-          parent_id: action.data.parentId || null,
-          start_time: action.data.startTime,
-          end_time: action.data.endTime,
-          assignee_id: action.data.assigneeId,
+          projectId: this.currentProjectId,
         }
-
-        // Remove frontend-only fields
-        delete backendTaskData.parentId
-        delete backendTaskData.startTime
-        delete backendTaskData.endTime
-        delete backendTaskData.assigneeId
-        delete backendTaskData.projectId
 
         await api.post('/tasks', backendTaskData)
 
         // Replace temp task
         this.tasks = this.tasks.filter((t) => t.id !== action.tempId)
       } else if (action.type === 'update') {
-        // Convert frontend format to backend format for update
+        // Backend now uses camelCase, no conversion needed
         const backendUpdates = {
           ...action.data,
-          // Convert camelCase to snake_case for backend
-          parent_id: action.data.parentId,
-          start_time: action.data.startTime,
-          end_time: action.data.endTime,
-          assignee_id: action.data.assigneeId,
-          sort_order: action.data.sortOrder,
         }
-
-        // Remove frontend-only fields
-        delete backendUpdates.parentId
-        delete backendUpdates.startTime
-        delete backendUpdates.endTime
-        delete backendUpdates.assigneeId
-        delete backendUpdates.projectId
-        delete backendUpdates.sortOrder
 
         await api.put(`/tasks/${action.taskId}`, backendUpdates)
       } else if (action.type === 'delete') {
@@ -636,40 +610,20 @@ export const useTaskStore = defineStore('task', {
 
       if (this.isOnline && this.authToken) {
         try {
-          // Convert frontend format to backend format
+          // Backend now uses camelCase, no conversion needed
           const backendTaskData = {
             ...taskData,
-            project_id: this.currentProjectId,
-            // Convert camelCase to snake_case for backend
-            parent_id: taskData.parentId || null,
-            start_time: taskData.startTime,
-            end_time: taskData.endTime,
-            assignee_id: taskData.assigneeId,
+            projectId: this.currentProjectId,
           }
-
-          // Remove frontend-only fields
-          delete backendTaskData.parentId
-          delete backendTaskData.startTime
-          delete backendTaskData.endTime
-          delete backendTaskData.assigneeId
-          delete backendTaskData.projectId
 
           const response = await api.post('/tasks', backendTaskData)
 
           // Replace temp task with server response
           const index = this.tasks.findIndex((t) => t.id === tempId)
           if (index !== -1 && response.data.task) {
-            // Convert backend format to frontend format
-            const serverTask = response.data.task
+            // Backend now uses camelCase, no conversion needed
             this.tasks[index] = {
-              ...serverTask,
-              // Ensure frontend field naming
-              projectId: serverTask.project_id,
-              parentId: serverTask.parent_id || null,
-              startTime: serverTask.start_time,
-              endTime: serverTask.end_time,
-              createdAt: serverTask.created_at,
-              updatedAt: serverTask.updated_at,
+              ...response.data.task,
               _isTemp: false,
             }
           }
@@ -747,42 +701,17 @@ export const useTaskStore = defineStore('task', {
 
       if (this.isOnline && this.authToken) {
         try {
-          // Convert frontend format to backend format
+          // Backend now uses camelCase, no conversion needed
           const backendUpdates = {
             ...updates,
             version: originalTask.version,
-            // Convert camelCase to snake_case for backend
-            parent_id: updates.parentId,
-            start_time: updates.startTime,
-            end_time: updates.endTime,
-            assignee_id: updates.assigneeId,
-            sort_order: updates.sortOrder,
           }
-
-          // Remove frontend-only fields
-          delete backendUpdates.parentId
-          delete backendUpdates.startTime
-          delete backendUpdates.endTime
-          delete backendUpdates.assigneeId
-          delete backendUpdates.projectId
-          delete backendUpdates.sortOrder
 
           const response = await api.put(`/tasks/${taskId}`, backendUpdates)
 
-          // Convert backend response to frontend format
+          // Backend now uses camelCase, no conversion needed
           if (response.data.task) {
-            const serverTask = response.data.task
-            this.tasks[index] = {
-              ...serverTask,
-              // Convert snake_case to camelCase for frontend
-              projectId: serverTask.project_id,
-              parentId: serverTask.parent_id || null,
-              startTime: serverTask.start_time,
-              endTime: serverTask.end_time,
-              assigneeId: serverTask.assignee_id,
-              createdAt: serverTask.created_at,
-              updatedAt: serverTask.updated_at,
-            }
+            this.tasks[index] = response.data.task
           } else {
             this.tasks[index] = response.data
           }

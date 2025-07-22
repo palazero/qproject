@@ -6,7 +6,8 @@
       "Bash(rm:*)",
       "WebFetch(domain:docs.dhtmlx.com)",
       "Bash(npm run dev:*)",
-      "Bash(git add:*)"
+      "Bash(git add:*)",
+      "Bash(git push:*)"
     ],
     "deny": []
   }
