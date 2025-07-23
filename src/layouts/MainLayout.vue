@@ -15,6 +15,33 @@
           任務管理系統
         </q-toolbar-title>
 
+        <!-- Project selector -->
+        <q-select
+          v-if="authStore.isAuthenticated && openProjects.length > 0"
+          v-model="selectedProject"
+          :options="openProjects"
+          option-value="id"
+          option-label="name"
+          label="當前專案"
+          dense
+          outlined
+          emit-value
+          map-options
+          style="min-width: 180px"
+          @update:model-value="onProjectChange"
+        >
+          <template v-slot:prepend>
+            <q-icon name="folder" />
+          </template>
+          <template v-slot:no-option>
+            <q-item>
+              <q-item-section class="text-grey">
+                沒有可用專案
+              </q-item-section>
+            </q-item>
+          </template>
+        </q-select>
+
         <!-- User info and auth buttons -->
         <div class="row items-center q-gutter-sm">
           <!-- Sync status indicator -->
@@ -239,6 +266,11 @@ const todoTasksCount = computed(() => {
   return taskStore.tasks.filter(task => task.status === 'todo').length
 })
 
+// Project related computed properties
+const openProjects = computed(() => {
+  return projectStore.openProjects || []
+})
+
 // Sync status computed properties
 const syncStatusIcon = computed(() => {
   switch (taskStore.syncStatus) {
@@ -270,16 +302,19 @@ function toggleLeftDrawer() {
 }
 
 // Project methods
-async function onProjectChange(project) {
-  if (project) {
-    projectStore.setCurrentProject(project)
-    await taskStore.setCurrentProject(project.id)
+async function onProjectChange(projectId) {
+  if (projectId) {
+    const project = openProjects.value.find(p => p.id === projectId)
+    if (project) {
+      projectStore.setCurrentProject(project)
+      await taskStore.setCurrentProject(project.id)
+    }
   }
 }
 
 function onProjectCreated(project) {
-  selectedProject.value = project
-  onProjectChange(project)
+  selectedProject.value = project.id
+  onProjectChange(project.id)
   showCreateProjectDialog.value = false
 }
 
@@ -340,21 +375,21 @@ onMounted(async () => {
   if (authStore.isAuthenticated) {
     await projectStore.loadProjects()
 
-    // Set initial project if available
-    if (projectStore.currentProject) {
-      selectedProject.value = projectStore.currentProject
+    // Set initial project if available (only open projects)
+    if (projectStore.currentProject && projectStore.currentProject.status === 'open') {
+      selectedProject.value = projectStore.currentProject.id
     } else if (taskStore.currentProjectId) {
-      // Try to find project by stored currentProjectId
-      const storedProject = projectStore.projects.find(p => p.id === taskStore.currentProjectId)
+      // Try to find project by stored currentProjectId (only open projects)
+      const storedProject = openProjects.value.find(p => p.id === taskStore.currentProjectId)
       if (storedProject) {
-        selectedProject.value = storedProject
+        selectedProject.value = storedProject.id
         // Load tasks for this project immediately
         await taskStore.loadTasksFromServer()
       }
-    } else if (projectStore.projects.length > 0) {
-      const firstProject = projectStore.projects[0]
-      selectedProject.value = firstProject
-      await onProjectChange(firstProject)
+    } else if (openProjects.value.length > 0) {
+      const firstProject = openProjects.value[0]
+      selectedProject.value = firstProject.id
+      await onProjectChange(firstProject.id)
     }
   }
 })

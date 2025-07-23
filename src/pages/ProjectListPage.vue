@@ -69,17 +69,36 @@
       <q-card-section class="row items-center q-pb-none">
         <div class="text-h6">專案列表</div>
         <q-space />
-        <q-input
-          v-model="searchQuery"
-          placeholder="搜尋專案..."
-          dense
-          outlined
-          class="search-input"
-        >
-          <template v-slot:prepend>
-            <q-icon name="search" />
-          </template>
-        </q-input>
+        <div class="row q-gutter-sm">
+          <q-input
+            v-model="searchQuery"
+            placeholder="搜尋專案..."
+            dense
+            outlined
+            class="search-input"
+            style="min-width: 200px"
+          >
+            <template v-slot:prepend>
+              <q-icon name="search" />
+            </template>
+          </q-input>
+          
+          <q-select
+            v-model="statusFilter"
+            :options="statusFilterOptions"
+            label="狀態篩選"
+            dense
+            outlined
+            emit-value
+            map-options
+            clearable
+            style="min-width: 120px"
+          >
+            <template v-slot:prepend>
+              <q-icon name="filter_alt" />
+            </template>
+          </q-select>
+        </div>
       </q-card-section>
 
       <q-card-section v-if="loading" class="text-center">
@@ -236,6 +255,7 @@ export default {
 
     const loading = ref(false)
     const searchQuery = ref('')
+    const statusFilter = ref(null)
     const showCreateDialog = ref(false)
     const showMemberDialog = ref(false)
     const editingProject = ref(null)
@@ -246,17 +266,34 @@ export default {
 
     const projects = computed(() => projectStore.projects)
 
+    const statusFilterOptions = [
+      { label: '進行中', value: 'open' },
+      { label: '已關閉', value: 'close' },
+      { label: '已取消', value: 'cancel' }
+    ]
+
     const filteredProjects = computed(() => {
-      if (!searchQuery.value) return projects.value
-      const query = searchQuery.value.toLowerCase()
-      return projects.value.filter(project =>
-        project.name.toLowerCase().includes(query) ||
-        (project.description && project.description.toLowerCase().includes(query))
-      )
+      let filtered = projects.value
+
+      // Apply search filter
+      if (searchQuery.value) {
+        const query = searchQuery.value.toLowerCase()
+        filtered = filtered.filter(project =>
+          project.name.toLowerCase().includes(query) ||
+          (project.description && project.description.toLowerCase().includes(query))
+        )
+      }
+
+      // Apply status filter
+      if (statusFilter.value) {
+        filtered = filtered.filter(project => project.status === statusFilter.value)
+      }
+
+      return filtered
     })
 
     const activeProjects = computed(() => {
-      return projects.value.filter(p => p.status === 'active').length
+      return projects.value.filter(p => p.status === 'open').length
     })
 
     const totalTasks = computed(() => {
@@ -279,20 +316,18 @@ export default {
 
     const getStatusColor = (status) => {
       const statusColors = {
-        active: 'positive',
-        completed: 'primary',
-        archived: 'grey',
-        planning: 'warning'
+        open: 'positive',
+        close: 'orange', 
+        cancel: 'negative'
       }
       return statusColors[status] || 'grey'
     }
 
     const getStatusLabel = (status) => {
       const statusLabels = {
-        active: '進行中',
-        completed: '已完成',
-        archived: '已封存',
-        planning: '規劃中'
+        open: '進行中',
+        close: '已關閉',
+        cancel: '已取消'
       }
       return statusLabels[status] || '未知'
     }
@@ -409,6 +444,8 @@ export default {
     return {
       loading,
       searchQuery,
+      statusFilter,
+      statusFilterOptions,
       showCreateDialog,
       showMemberDialog,
       editingProject,
