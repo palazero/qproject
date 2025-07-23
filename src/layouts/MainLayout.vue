@@ -51,8 +51,16 @@
             :color="syncStatusColor"
             size="sm"
             :title="syncStatusText"
+            clickable
+            @click="showSyncDetails"
           >
             {{ syncStatusText }}
+            <q-badge
+              v-if="taskStore.pendingSyncCount > 0"
+              color="orange"
+              :label="taskStore.pendingSyncCount"
+              floating
+            />
           </q-chip>
 
           <!-- User menu -->
@@ -102,7 +110,7 @@
           label="設定"
         >
           <q-menu>
-            <q-list style="min-width: 100px">
+            <q-list style="min-width: 200px">
               <q-item clickable @click="clearAllData">
                 <q-item-section avatar>
                   <q-icon name="delete_sweep" />
@@ -110,6 +118,38 @@
                 <q-item-section>清除所有資料</q-item-section>
               </q-item>
 
+              <q-separator />
+
+              <!-- Development Tools -->
+              <q-item-label header>開發工具</q-item-label>
+              
+              <q-item clickable @click="generateTestConflict">
+                <q-item-section avatar>
+                  <q-icon name="merge_type" />
+                </q-item-section>
+                <q-item-section>生成測試衝突</q-item-section>
+              </q-item>
+
+              <q-item clickable @click="simulateConflictScenarios">
+                <q-item-section avatar>
+                  <q-icon name="bug_report" />
+                </q-item-section>
+                <q-item-section>模擬衝突場景</q-item-section>
+              </q-item>
+
+              <q-item clickable @click="showConflictManager = true">
+                <q-item-section avatar>
+                  <q-icon name="manage_accounts" />
+                </q-item-section>
+                <q-item-section>衝突管理器</q-item-section>
+              </q-item>
+
+              <q-item clickable @click="showDataCleanupManager = true">
+                <q-item-section avatar>
+                  <q-icon name="cleaning_services" />
+                </q-item-section>
+                <q-item-section>資料清理</q-item-section>
+              </q-item>
             </q-list>
           </q-menu>
         </q-btn>
@@ -231,6 +271,15 @@
       v-model="showCreateProjectDialog"
       @project-created="onProjectCreated"
     />
+
+    <!-- Sync queue viewer dialog -->
+    <SyncQueueViewer v-model="showSyncQueueDialog" />
+
+    <!-- Conflict manager dialog -->
+    <ConflictManager v-model="showConflictManager" />
+
+    <!-- Data cleanup manager dialog -->
+    <DataCleanupManager v-model="showDataCleanupManager" />
   </q-layout>
 </template>
 
@@ -242,6 +291,9 @@ import { useAuthStore } from 'src/stores/authStore'
 import { useProjectStore } from 'src/stores/projectStore'
 import { useQuasar } from 'quasar'
 import ProjectDialog from 'src/components/ProjectDialog.vue'
+import SyncQueueViewer from 'src/components/SyncQueueViewer.vue'
+import ConflictManager from 'src/components/ConflictManager.vue'
+import DataCleanupManager from 'src/components/DataCleanupManager.vue'
 
 const router = useRouter()
 const taskStore = useTaskStore()
@@ -252,6 +304,9 @@ const $q = useQuasar()
 const leftDrawerOpen = ref(false)
 const selectedProject = ref(null)
 const showCreateProjectDialog = ref(false)
+const showSyncQueueDialog = ref(false)
+const showConflictManager = ref(false)
+const showDataCleanupManager = ref(false)
 
 // Computed properties for task statistics
 const completedTasksCount = computed(() => {
@@ -271,29 +326,21 @@ const openProjects = computed(() => {
   return projectStore.openProjects || []
 })
 
-// Sync status computed properties
+// Sync status computed properties using enhanced sync queue
 const syncStatusIcon = computed(() => {
-  switch (taskStore.syncStatus) {
-    case 'syncing': return 'sync'
-    case 'error': return 'sync_problem'
-    default: return taskStore.isOnline ? 'cloud_done' : 'cloud_off'
-  }
+  return taskStore.syncStatusIcon
 })
 
 const syncStatusColor = computed(() => {
-  switch (taskStore.syncStatus) {
-    case 'syncing': return 'primary'
-    case 'error': return 'negative'
-    default: return taskStore.isOnline ? 'positive' : 'warning'
+  // Override color for conflicts
+  if (taskStore.hasUnresolvedConflicts) {
+    return 'orange'
   }
+  return taskStore.syncStatusColor
 })
 
 const syncStatusText = computed(() => {
-  switch (taskStore.syncStatus) {
-    case 'syncing': return '同步中'
-    case 'error': return '同步錯誤'
-    default: return taskStore.isOnline ? '已連線' : '離線'
-  }
+  return taskStore.syncStatusText
 })
 
 // Methods
@@ -348,6 +395,15 @@ function clearAllData() {
   })
 }
 
+function showSyncDetails() {
+  // Show conflict manager if there are unresolved conflicts
+  if (taskStore.hasUnresolvedConflicts) {
+    showConflictManager.value = true
+  } else {
+    showSyncQueueDialog.value = true
+  }
+}
+
 // Auth related methods
 function goToLogin() {
   router.push('/login')
@@ -368,6 +424,41 @@ async function logout() {
     })
     router.push('/login')
   })
+}
+
+// Development tools
+function generateTestConflict() {
+  const conflict = taskStore.generateTestConflict()
+  if (conflict) {
+    $q.notify({
+      message: '已生成測試衝突',
+      color: 'info',
+      icon: 'merge_type'
+    })
+  } else {
+    $q.notify({
+      message: '無法生成衝突：沒有可用任務',
+      color: 'warning',
+      icon: 'warning'
+    })
+  }
+}
+
+function simulateConflictScenarios() {
+  try {
+    taskStore.simulateConflictScenarios()
+    $q.notify({
+      message: '已模擬多個衝突場景',
+      color: 'info',
+      icon: 'bug_report'
+    })
+  } catch (error) {
+    $q.notify({
+      message: '模擬衝突失敗',
+      color: 'negative',
+      icon: 'error'
+    })
+  }
 }
 
 // Initialize data on mount

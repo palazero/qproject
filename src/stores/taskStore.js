@@ -87,6 +87,25 @@ export const useTaskStore = defineStore('task', {
     socketReconnectTimer: null,
     socketReconnectDelay: 1000, // Start with 1 second
     
+    // Network monitoring state
+    networkCheckInterval: null,
+    networkCheckFailures: 0,
+    apiUrl: process.env.VUE_APP_API_URL || 'http://localhost:3000/api',
+    
+    // Conflict resolution state
+    conflicts: [], // Array of detected conflicts
+    conflictResolutionQueue: [], // Queue for processing conflicts
+    
+    // Data cleanup state
+    cleanupLogs: [], // Array of cleanup operations
+    lastCleanupRun: null, // Timestamp of last cleanup
+    cleanupSettings: {
+      autoCleanupEnabled: true,
+      closedProjectRetentionDays: 7,
+      maxLogEntries: 100,
+      cleanupIntervalHours: 24
+    }
+    
     // Authentication
     currentUser: null,
     authToken: localStorage.getItem('auth_token'),
@@ -382,13 +401,28 @@ export const useTaskStore = defineStore('task', {
     },
 
     syncStatusText: (state, getters) => {
+      const conflictCount = getters.pendingConflictsCount
       const pendingCount = getters.pendingSyncOperations.length
       const failedCount = getters.failedSyncOperations.length
       
+      if (conflictCount > 0) return `${conflictCount} 個衝突待解決`
       if (getters.syncInProgress) return '同步中...'
       if (failedCount > 0) return `${failedCount} 項失敗`
       if (pendingCount > 0) return `${pendingCount} 項待同步`
       return '已同步'
+    },
+
+    // Conflict-related getters
+    pendingConflicts: (state) => {
+      return state.conflicts.filter(conflict => conflict.status === 'pending')
+    },
+
+    pendingConflictsCount: (state, getters) => {
+      return getters.pendingConflicts.length
+    },
+
+    hasUnresolvedConflicts: (state, getters) => {
+      return getters.pendingConflictsCount > 0
     },
   },
 
@@ -543,6 +577,9 @@ export const useTaskStore = defineStore('task', {
         this.socket = null
       }
       
+      // Stop network monitoring when disconnecting
+      this.stopPeriodicNetworkCheck()
+      
       this.socketConnected = false
       this.socketReconnectAttempts = 0
     },
@@ -603,6 +640,15 @@ export const useTaskStore = defineStore('task', {
         tags: this.tags,
         lastUpdated: this.lastUpdated,
         currentProjectId: this.currentProjectId,
+        // Persist sync queue for offline support
+        syncQueue: this.syncQueue,
+        lastSyncTimestamp: this.lastSyncTimestamp,
+        // Persist conflicts for resolution
+        conflicts: this.conflicts,
+        // Persist cleanup data
+        cleanupLogs: this.cleanupLogs,
+        lastCleanupRun: this.lastCleanupRun,
+        cleanupSettings: this.cleanupSettings,
       }
 
       localStorage.setItem(STORAGE_KEY, JSON.stringify(dataToStore))
@@ -626,6 +672,37 @@ export const useTaskStore = defineStore('task', {
           if (!this.currentProjectId && data.currentProjectId) {
             this.currentProjectId = data.currentProjectId
           }
+          
+          // Restore sync queue for offline support
+          this.syncQueue = data.syncQueue || []
+          this.lastSyncTimestamp = data.lastSyncTimestamp || null
+          
+          // Restore conflicts for resolution
+          this.conflicts = data.conflicts || []
+          
+          // Restore cleanup data
+          this.cleanupLogs = data.cleanupLogs || []
+          this.lastCleanupRun = data.lastCleanupRun || null
+          this.cleanupSettings = {
+            ...this.cleanupSettings,
+            ...(data.cleanupSettings || {})
+          }
+          
+          // Resume processing sync queue if we have pending items and are online
+          if (this.syncQueue.length > 0 && this.isOnline) {
+            this.processSyncQueue()
+          }
+          
+          // Auto-resolve conflicts if possible
+          if (this.conflicts.length > 0) {
+            const resolved = this.autoResolveConflicts()
+            if (resolved > 0) {
+              console.log(`Auto-resolved ${resolved} conflicts on startup`)
+            }
+          }
+          
+          // Check if cleanup is needed
+          this.scheduleCleanupCheck()
         } catch (e) {
           console.warn('Failed to load stored data:', e)
           // Use setTimeout to ensure Notify is called in proper context
@@ -640,16 +717,104 @@ export const useTaskStore = defineStore('task', {
       }
     },
 
-    // Network monitoring
+    // Enhanced network monitoring with periodic checks
     initializeNetworkMonitoring() {
+      // Basic browser online/offline events
       window.addEventListener('online', () => {
-        this.isOnline = true
-        this.syncPendingActions()
+        console.log('Browser detected online')
+        this.handleNetworkOnline()
       })
 
       window.addEventListener('offline', () => {
-        this.isOnline = false
+        console.log('Browser detected offline')
+        this.handleNetworkOffline()
       })
+
+      // Start periodic network check
+      this.startPeriodicNetworkCheck()
+    },
+
+    // Handle network online state
+    handleNetworkOnline() {
+      this.isOnline = true
+      this.networkCheckFailures = 0
+      
+      // Attempt to reconnect socket if not connected
+      if (!this.socketConnected && this.authToken) {
+        this.initializeSocket()
+      }
+      
+      // Resume sync queue processing
+      this.syncPendingActions()
+    },
+
+    // Handle network offline state
+    handleNetworkOffline() {
+      this.isOnline = false
+      this.socketConnected = false
+      
+      // Disconnect socket cleanly
+      if (this.socket) {
+        this.socket.disconnect()
+      }
+    },
+
+    // Start periodic network connectivity check
+    startPeriodicNetworkCheck() {
+      // Clear existing interval if any
+      if (this.networkCheckInterval) {
+        clearInterval(this.networkCheckInterval)
+      }
+
+      // Check every 30 seconds
+      this.networkCheckInterval = setInterval(() => {
+        this.checkNetworkConnectivity()
+      }, 30000) // 30 seconds
+    },
+
+    // Stop periodic network check
+    stopPeriodicNetworkCheck() {
+      if (this.networkCheckInterval) {
+        clearInterval(this.networkCheckInterval)
+        this.networkCheckInterval = null
+      }
+    },
+
+    // Check actual network connectivity (not just browser state)
+    async checkNetworkConnectivity() {
+      try {
+        // Try to reach our API server
+        const controller = new AbortController()
+        const timeoutId = setTimeout(() => controller.abort(), 5000) // 5 second timeout
+
+        const response = await fetch(`${this.apiUrl}/health`, {
+          method: 'GET',
+          signal: controller.signal,
+          cache: 'no-cache'
+        })
+
+        clearTimeout(timeoutId)
+
+        if (response.ok) {
+          // Network is working
+          if (!this.isOnline) {
+            console.log('Network connectivity restored')
+            this.handleNetworkOnline()
+          }
+          this.networkCheckFailures = 0
+        } else {
+          throw new Error(`Server responded with status: ${response.status}`)
+        }
+      } catch (error) {
+        console.warn('Network connectivity check failed:', error.message)
+        this.networkCheckFailures = (this.networkCheckFailures || 0) + 1
+
+        // If we've had multiple consecutive failures, consider offline
+        if (this.networkCheckFailures >= 3 && this.isOnline) {
+          console.log('Multiple network checks failed, marking as offline')
+          this.handleNetworkOffline()
+        }
+      }
     },
 
     // Handle realtime sync
@@ -717,6 +882,9 @@ export const useTaskStore = defineStore('task', {
       // Mark as syncing
       item.status = 'syncing'
       item.lastAttempt = new Date().toISOString()
+      
+      // Save status change to localStorage
+      this.saveToLocalStorage()
 
       try {
         await this.executeSyncAction(item)
@@ -724,6 +892,9 @@ export const useTaskStore = defineStore('task', {
         // Success - remove from queue
         this.removeSyncQueueItem(item.id)
         console.log(`Successfully synced: ${item.action} ${item.entity}`)
+        
+        // Save queue update to localStorage
+        this.saveToLocalStorage()
         
       } catch (error) {
         console.error(`Sync failed for ${item.action} ${item.entity}:`, error)
@@ -735,6 +906,9 @@ export const useTaskStore = defineStore('task', {
         // Check if we should keep retrying
         if (item.retryCount >= 5) {
           item.status = 'failed'
+          
+          // Save failed status to localStorage
+          this.saveToLocalStorage()
           
           // Notify user of permanent failure
           setTimeout(() => {
@@ -757,6 +931,9 @@ export const useTaskStore = defineStore('task', {
           }, 0)
         } else {
           item.status = 'failed'
+          
+          // Save failed status to localStorage
+          this.saveToLocalStorage()
           
           // Schedule retry
           const retryDelay = this.calculateRetryDelay(item.retryCount)
@@ -794,6 +971,9 @@ export const useTaskStore = defineStore('task', {
 
       this.syncQueue.push(queueItem)
       
+      // Persist sync queue immediately to localStorage
+      this.saveToLocalStorage()
+      
       // Sort by priority and creation time
       this.syncQueue.sort((a, b) => {
         const priorityOrder = { high: 3, normal: 2, low: 1 }
@@ -818,11 +998,13 @@ export const useTaskStore = defineStore('task', {
     // Remove item from sync queue
     removeSyncQueueItem(itemId) {
       this.syncQueue = this.syncQueue.filter(item => item.id !== itemId)
+      this.saveToLocalStorage()
     },
 
     // Clear all failed items from queue
     clearFailedSyncItems() {
       this.syncQueue = this.syncQueue.filter(item => item.status !== 'failed')
+      this.saveToLocalStorage()
     },
 
     // Retry all failed items
@@ -835,12 +1017,593 @@ export const useTaskStore = defineStore('task', {
         }
       })
       
+      this.saveToLocalStorage()
       this.processSyncQueue()
+    },
+    // Alias for component compatibility
+    retryFailedSync() {
+      return this.retryFailedSyncItems()
+    },
+    // Retry a specific sync item
+    retrySyncItem(itemId) {
+      const item = this.syncQueue.find(item => item.id === itemId)
+      if (item && item.status === 'failed') {
+        item.retryCount = 0
+        item.status = 'pending'
+        item.lastError = null
+        this.saveToLocalStorage()
+        this.processSyncQueue()
+      }
     },
 
     // Legacy sync pending actions (for backward compatibility)
     async syncPendingActions() {
       return this.processSyncQueue()
+    },
+
+    // ============== CONFLICT RESOLUTION SYSTEM ==============
+    
+    // Detect conflicts between local and server data
+    detectConflict(localData, serverData, entityType) {
+      if (!localData || !serverData) return null
+      
+      // Check if versions differ
+      const localVersion = localData.version || 1
+      const serverVersion = serverData.version || 1
+      
+      // No conflict if versions are the same
+      if (localVersion === serverVersion) return null
+      
+      // Check timestamps for additional validation
+      const localUpdated = new Date(localData.updatedAt || 0)
+      const serverUpdated = new Date(serverData.updatedAt || 0)
+      
+      // Identify conflicting fields
+      const conflicts = this.identifyConflictingFields(localData, serverData, entityType)
+      
+      if (conflicts.length === 0) return null
+      
+      return {
+        id: uuidv4(),
+        entityType,
+        entityId: localData.id,
+        localData: { ...localData },
+        serverData: { ...serverData },
+        conflicts,
+        localTimestamp: localData.updatedAt,
+        serverTimestamp: serverData.updatedAt,
+        localVersion,
+        serverVersion,
+        createdAt: new Date().toISOString(),
+        status: 'pending' // 'pending', 'resolved', 'ignored'
+      }
+    },
+
+    // Identify which specific fields are in conflict
+    identifyConflictingFields(localData, serverData, entityType) {
+      const conflicts = []
+      
+      // Define fields to check based on entity type
+      const fieldsToCheck = entityType === 'task' 
+        ? ['title', 'description', 'status', 'priority', 'assignee', 'startTime', 'endTime', 'tags', 'dependencies', 'parentId']
+        : ['name', 'description', 'status', 'settings']
+      
+      fieldsToCheck.forEach(field => {
+        const localValue = localData[field]
+        const serverValue = serverData[field]
+        
+        // Deep comparison for arrays and objects
+        if (!this.isEqual(localValue, serverValue)) {
+          conflicts.push({
+            field,
+            localValue,
+            serverValue,
+            canAutoMerge: this.canAutoMergeField(field, localValue, serverValue)
+          })
+        }
+      })
+      
+      return conflicts
+    },
+
+    // Check if a field can be automatically merged
+    canAutoMergeField(field, localValue, serverValue) {
+      // Arrays can sometimes be merged (e.g., tags)
+      if (Array.isArray(localValue) && Array.isArray(serverValue)) {
+        if (field === 'tags') return true // Tags can be merged
+        if (field === 'dependencies') return false // Dependencies need manual resolution
+      }
+      
+      // Most other fields require manual resolution
+      return false
+    },
+
+    // Deep equality check
+    isEqual(a, b) {
+      if (a === b) return true
+      if (a == null || b == null) return false
+      if (Array.isArray(a) && Array.isArray(b)) {
+        if (a.length !== b.length) return false
+        return a.every((val, i) => this.isEqual(val, b[i]))
+      }
+      if (typeof a === 'object' && typeof b === 'object') {
+        const keysA = Object.keys(a)
+        const keysB = Object.keys(b)
+        if (keysA.length !== keysB.length) return false
+        return keysA.every(key => this.isEqual(a[key], b[key]))
+      }
+      return false
+    },
+
+    // Add conflict to resolution queue
+    addConflict(conflict) {
+      this.conflicts.push(conflict)
+      this.saveToLocalStorage()
+    },
+
+    // Remove resolved conflict
+    resolveConflict(conflictId, resolution) {
+      const conflictIndex = this.conflicts.findIndex(c => c.id === conflictId)
+      if (conflictIndex === -1) return
+      
+      const conflict = this.conflicts[conflictIndex]
+      
+      // Apply resolution
+      this.applyConflictResolution(conflict, resolution)
+      
+      // Mark as resolved and remove from queue
+      this.conflicts.splice(conflictIndex, 1)
+      this.saveToLocalStorage()
+    },
+
+    // Apply the chosen resolution to the actual data
+    applyConflictResolution(conflict, resolution) {
+      const { entityType, entityId } = conflict
+      
+      if (entityType === 'task') {
+        const taskIndex = this.tasks.findIndex(t => t.id === entityId)
+        if (taskIndex !== -1) {
+          this.tasks[taskIndex] = {
+            ...this.tasks[taskIndex],
+            ...resolution.data,
+            version: Math.max(conflict.localVersion, conflict.serverVersion) + 1,
+            updatedAt: new Date().toISOString(),
+            lastModifiedBy: this.currentUser?.id || 'unknown'
+          }
+        }
+      }
+      // Add project resolution logic when needed
+    },
+
+    // Auto-resolve conflicts where possible
+    autoResolveConflicts() {
+      const autoResolvableConflicts = this.conflicts.filter(conflict => 
+        conflict.status === 'pending' && this.canAutoResolveConflict(conflict)
+      )
+      
+      autoResolvableConflicts.forEach(conflict => {
+        const resolution = this.generateAutoResolution(conflict)
+        this.resolveConflict(conflict.id, resolution)
+      })
+      
+      return autoResolvableConflicts.length
+    },
+
+    // Check if conflict can be auto-resolved
+    canAutoResolveConflict(conflict) {
+      // Auto-resolve if all conflicting fields can be merged
+      return conflict.conflicts.every(fieldConflict => 
+        fieldConflict.canAutoMerge || this.useTimestampResolution(fieldConflict, conflict)
+      )
+    },
+
+    // Use timestamp to resolve field conflicts
+    useTimestampResolution(fieldConflict, conflict) {
+      // Use most recent timestamp for single-value fields
+      const useServer = new Date(conflict.serverTimestamp) > new Date(conflict.localTimestamp)
+      return true // Always can use timestamp resolution
+    },
+
+    // Generate automatic resolution
+    generateAutoResolution(conflict) {
+      const mergedData = { ...conflict.localData }
+      
+      conflict.conflicts.forEach(fieldConflict => {
+        const { field, localValue, serverValue, canAutoMerge } = fieldConflict
+        
+        if (canAutoMerge && field === 'tags' && Array.isArray(localValue) && Array.isArray(serverValue)) {
+          // Merge tags by combining unique values
+          mergedData[field] = [...new Set([...localValue, ...serverValue])]
+        } else {
+          // Use timestamp-based resolution
+          const useServer = new Date(conflict.serverTimestamp) > new Date(conflict.localTimestamp)
+          mergedData[field] = useServer ? serverValue : localValue
+        }
+      })
+      
+      return { data: mergedData, type: 'auto' }
+    },
+
+    // ============== DEVELOPMENT & TESTING HELPERS ==============
+    
+    // Generate test conflicts for development (remove in production)
+    generateTestConflict() {
+      if (this.tasks.length === 0) return null
+      
+      const testTask = this.tasks[0]
+      const fakeServerData = {
+        ...testTask,
+        title: testTask.title + ' (伺服器版本)',
+        status: testTask.status === 'todo' ? 'in_progress' : 'todo',
+        tags: [...(testTask.tags || []), '伺服器標籤'],
+        updatedAt: new Date(Date.now() + 60000).toISOString(), // 1 minute later
+        version: (testTask.version || 1) + 1,
+        lastModifiedBy: 'other-user'
+      }
+      
+      const conflict = this.detectConflict(testTask, fakeServerData, 'task')
+      if (conflict) {
+        this.addConflict(conflict)
+        return conflict
+      }
+      
+      return null
+    },
+
+    // Simulate conflict scenarios for testing
+    simulateConflictScenarios() {
+      const scenarios = [
+        {
+          name: '簡單欄位衝突',
+          local: { title: '本地任務標題', status: 'todo' },
+          server: { title: '伺服器任務標題', status: 'in_progress' }
+        },
+        {
+          name: '標籤合併衝突',
+          local: { tags: ['UI', '前端'] },
+          server: { tags: ['前端', '測試'] }
+        },
+        {
+          name: '複雜衝突',
+          local: { 
+            title: '本地標題', 
+            description: '本地描述', 
+            priority: 'high',
+            tags: ['urgent'] 
+          },
+          server: { 
+            title: '伺服器標題', 
+            description: '伺服器描述', 
+            priority: 'medium',
+            tags: ['normal'] 
+          }
+        }
+      ]
+      
+      scenarios.forEach((scenario, index) => {
+        if (this.tasks.length > index) {
+          const baseTask = this.tasks[index]
+          const localData = { ...baseTask, ...scenario.local }
+          const serverData = { ...baseTask, ...scenario.server }
+          
+          const conflict = this.detectConflict(localData, serverData, 'task')
+          if (conflict) {
+            conflict.id = `test-${index}-${Date.now()}`
+            this.addConflict(conflict)
+          }
+        }
+      })
+      
+      console.log(`Generated ${scenarios.length} test conflict scenarios`)
+    },
+
+    // ============== DATA CLEANUP SYSTEM ==============
+    
+    // Schedule cleanup check
+    scheduleCleanupCheck() {
+      if (!this.cleanupSettings.autoCleanupEnabled) return
+      
+      const now = Date.now()
+      const lastRun = this.lastCleanupRun ? new Date(this.lastCleanupRun).getTime() : 0
+      const intervalMs = this.cleanupSettings.cleanupIntervalHours * 60 * 60 * 1000
+      
+      // Check if it's time for cleanup
+      if (now - lastRun >= intervalMs) {
+        setTimeout(() => {
+          this.performAutomaticCleanup()
+        }, 5000) // Delay 5 seconds after startup
+      } else {
+        // Schedule next cleanup
+        const nextRunTime = lastRun + intervalMs
+        const delay = Math.max(nextRunTime - now, 60000) // At least 1 minute
+        
+        setTimeout(() => {
+          this.scheduleCleanupCheck()
+        }, delay)
+      }
+    },
+
+    // Perform automatic cleanup
+    async performAutomaticCleanup() {
+      if (!this.cleanupSettings.autoCleanupEnabled) return
+      
+      console.log('Starting automatic cleanup...')
+      
+      try {
+        const cleanupResult = await this.cleanupClosedProjects()
+        
+        // Log cleanup operation
+        this.addCleanupLog({
+          type: 'automatic',
+          timestamp: new Date().toISOString(),
+          result: cleanupResult,
+          triggeredBy: 'system'
+        })
+        
+        this.lastCleanupRun = new Date().toISOString()
+        this.saveToLocalStorage()
+        
+        // Schedule next cleanup
+        setTimeout(() => {
+          this.scheduleCleanupCheck()
+        }, this.cleanupSettings.cleanupIntervalHours * 60 * 60 * 1000)
+        
+        console.log('Automatic cleanup completed:', cleanupResult)
+        
+      } catch (error) {
+        console.error('Automatic cleanup failed:', error)
+        
+        this.addCleanupLog({
+          type: 'automatic',
+          timestamp: new Date().toISOString(),
+          error: error.message,
+          triggeredBy: 'system'
+        })
+      }
+    },
+
+    // Clean up closed projects older than retention period
+    async cleanupClosedProjects() {
+      const retentionMs = this.cleanupSettings.closedProjectRetentionDays * 24 * 60 * 60 * 1000
+      const cutoffDate = new Date(Date.now() - retentionMs)
+      
+      // Find projects to clean up
+      const projectsToCleanup = []
+      
+      // Note: We mainly clean tasks and sync data here
+      // Closed projects are handled by the project store itself
+      // For now, we focus on cleaning orphaned tasks
+      
+      // Find tasks associated with projects to cleanup
+      const projectIdsToCleanup = projectsToCleanup.map(p => p.id)
+      const tasksToCleanup = this.tasks.filter(task => 
+        task.projectId && projectIdsToCleanup.includes(task.projectId)
+      )
+      
+      // Find orphaned tasks (tasks without valid project)
+      // For simplicity, we'll consider tasks older than retention period as orphaned
+      const orphanedTasks = this.tasks.filter(task => {
+        if (!task.projectId) return false
+        if (!task.updatedAt) return false
+        
+        const taskAge = Date.now() - new Date(task.updatedAt).getTime()
+        return taskAge > retentionMs
+      })
+      
+      // Find old sync queue items
+      const oldSyncItems = this.syncQueue.filter(item => {
+        const itemAge = Date.now() - new Date(item.createdAt).getTime()
+        return itemAge > retentionMs && item.status === 'failed'
+      })
+      
+      // Find old conflicts
+      const oldConflicts = this.conflicts.filter(conflict => {
+        const conflictAge = Date.now() - new Date(conflict.createdAt).getTime()
+        return conflictAge > retentionMs
+      })
+      
+      const cleanupStats = {
+        projectsRemoved: 0,
+        tasksRemoved: 0,
+        orphanedTasksRemoved: 0,
+        syncItemsRemoved: 0,
+        conflictsRemoved: 0,
+        storageFreed: 0
+      }
+      
+      // Calculate storage before cleanup
+      const storageBefore = JSON.stringify({
+        tasks: this.tasks,
+        syncQueue: this.syncQueue,
+        conflicts: this.conflicts
+      }).length
+      
+      // Remove tasks
+      const allTasksToRemove = [...tasksToCleanup, ...orphanedTasks]
+      allTasksToRemove.forEach(task => {
+        const index = this.tasks.findIndex(t => t.id === task.id)
+        if (index !== -1) {
+          this.tasks.splice(index, 1)
+          cleanupStats.tasksRemoved++
+        }
+      })
+      
+      cleanupStats.orphanedTasksRemoved = orphanedTasks.length
+      
+      // Remove old sync queue items
+      oldSyncItems.forEach(item => {
+        const index = this.syncQueue.findIndex(i => i.id === item.id)
+        if (index !== -1) {
+          this.syncQueue.splice(index, 1)
+          cleanupStats.syncItemsRemoved++
+        }
+      })
+      
+      // Remove old conflicts
+      oldConflicts.forEach(conflict => {
+        const index = this.conflicts.findIndex(c => c.id === conflict.id)
+        if (index !== -1) {
+          this.conflicts.splice(index, 1)
+          cleanupStats.conflictsRemoved++
+        }
+      })
+      
+      // Clean up task links that reference removed tasks
+      const removedTaskIds = allTasksToRemove.map(t => t.id)
+      this.links = this.links.filter(link => 
+        !removedTaskIds.includes(link.source) && !removedTaskIds.includes(link.target)
+      )
+      
+      // Update task dependencies
+      this.tasks.forEach(task => {
+        if (task.dependencies && task.dependencies.length > 0) {
+          task.dependencies = task.dependencies.filter(depId => 
+            !removedTaskIds.includes(depId)
+          )
+        }
+      })
+      
+      // Calculate storage saved
+      const storageAfter = JSON.stringify({
+        tasks: this.tasks,
+        syncQueue: this.syncQueue,
+        conflicts: this.conflicts
+      }).length
+      
+      cleanupStats.storageFreed = storageBefore - storageAfter
+      cleanupStats.projectsRemoved = projectsToCleanup.length
+      
+      // Save changes
+      this.saveToLocalStorage()
+      
+      return cleanupStats
+    },
+
+    // Add cleanup log entry
+    addCleanupLog(logEntry) {
+      this.cleanupLogs.unshift({
+        id: uuidv4(),
+        ...logEntry
+      })
+      
+      // Limit log entries
+      if (this.cleanupLogs.length > this.cleanupSettings.maxLogEntries) {
+        this.cleanupLogs = this.cleanupLogs.slice(0, this.cleanupSettings.maxLogEntries)
+      }
+      
+      this.saveToLocalStorage()
+    },
+
+    // Manual cleanup with confirmation
+    async performManualCleanup(options = {}) {
+      const cleanupOptions = {
+        includeClosedProjects: true,
+        includeOrphanedTasks: true,
+        includeOldSyncItems: true,
+        includeOldConflicts: true,
+        customRetentionDays: null,
+        ...options
+      }
+      
+      const retentionDays = cleanupOptions.customRetentionDays || this.cleanupSettings.closedProjectRetentionDays
+      
+      try {
+        // Temporarily override retention if custom value provided
+        const originalRetention = this.cleanupSettings.closedProjectRetentionDays
+        if (cleanupOptions.customRetentionDays) {
+          this.cleanupSettings.closedProjectRetentionDays = cleanupOptions.customRetentionDays
+        }
+        
+        const result = await this.cleanupClosedProjects()
+        
+        // Restore original retention setting
+        this.cleanupSettings.closedProjectRetentionDays = originalRetention
+        
+        // Log manual cleanup
+        this.addCleanupLog({
+          type: 'manual',
+          timestamp: new Date().toISOString(),
+          result,
+          options: cleanupOptions,
+          triggeredBy: this.currentUser?.id || 'user'
+        })
+        
+        return result
+        
+      } catch (error) {
+        this.addCleanupLog({
+          type: 'manual',
+          timestamp: new Date().toISOString(),
+          error: error.message,
+          options: cleanupOptions,
+          triggeredBy: this.currentUser?.id || 'user'
+        })
+        
+        throw error
+      }
+    },
+
+    // Get cleanup statistics
+    getCleanupStats() {
+      const now = Date.now()
+      const retentionMs = this.cleanupSettings.closedProjectRetentionDays * 24 * 60 * 60 * 1000
+      const cutoffDate = new Date(now - retentionMs)
+      
+      // Count items that would be cleaned up
+      const orphanedTasks = this.tasks.filter(task => {
+        if (!task.projectId) return false
+        if (!task.updatedAt) return false
+        
+        const taskAge = now - new Date(task.updatedAt).getTime()
+        return taskAge > retentionMs
+      }).length
+      
+      const oldSyncItems = this.syncQueue.filter(item => {
+        const itemAge = now - new Date(item.createdAt).getTime()
+        return itemAge > retentionMs && item.status === 'failed'
+      }).length
+      
+      const oldConflicts = this.conflicts.filter(conflict => {
+        const conflictAge = now - new Date(conflict.createdAt).getTime()
+        return conflictAge > retentionMs
+      }).length
+      
+      return {
+        orphanedTasks,
+        oldSyncItems,
+        oldConflicts,
+        lastCleanupRun: this.lastCleanupRun,
+        nextScheduledCleanup: this.getNextCleanupTime(),
+        totalCleanupLogs: this.cleanupLogs.length,
+        autoCleanupEnabled: this.cleanupSettings.autoCleanupEnabled
+      }
+    },
+
+    // Get next cleanup time
+    getNextCleanupTime() {
+      if (!this.cleanupSettings.autoCleanupEnabled || !this.lastCleanupRun) {
+        return null
+      }
+      
+      const lastRun = new Date(this.lastCleanupRun).getTime()
+      const intervalMs = this.cleanupSettings.cleanupIntervalHours * 60 * 60 * 1000
+      
+      return new Date(lastRun + intervalMs).toISOString()
+    },
+
+    // Update cleanup settings
+    updateCleanupSettings(newSettings) {
+      this.cleanupSettings = {
+        ...this.cleanupSettings,
+        ...newSettings
+      }
+      
+      this.saveToLocalStorage()
+      
+      // Reschedule cleanup if interval changed
+      if (newSettings.cleanupIntervalHours !== undefined || newSettings.autoCleanupEnabled !== undefined) {
+        this.scheduleCleanupCheck()
+      }
     },
 
     // Execute sync action (enhanced to support both old and new formats)
@@ -872,7 +1635,44 @@ export const useTaskStore = defineStore('task', {
           }
           
         } else if (action === 'update') {
-          await api.put(`/tasks/${entityId}`, data)
+          // Check for conflicts before updating
+          const localTask = this.tasks.find(t => t.id === entityId)
+          
+          try {
+            // First, get the current server state
+            const serverResponse = await api.get(`/tasks/${entityId}`)
+            const serverTask = serverResponse.data.task
+            
+            // Detect conflicts
+            const conflict = this.detectConflict(localTask, serverTask, 'task')
+            
+            if (conflict) {
+              // Add conflict to resolution queue
+              this.addConflict(conflict)
+              
+              // Try auto-resolution first
+              if (this.canAutoResolveConflict(conflict)) {
+                const resolution = this.generateAutoResolution(conflict)
+                this.resolveConflict(conflict.id, resolution)
+                
+                // Use merged data for the update
+                await api.put(`/tasks/${entityId}`, resolution.data)
+              } else {
+                // Manual resolution needed - throw error to retry later
+                throw new Error(`衝突需要手動解決: ${entityId}`)
+              }
+            } else {
+              // No conflict, proceed with update
+              await api.put(`/tasks/${entityId}`, data)
+            }
+          } catch (error) {
+            if (error.response?.status === 404) {
+              // Task doesn't exist on server, treat as creation
+              await api.post('/tasks', data)
+            } else {
+              throw error
+            }
+          }
           
         } else if (action === 'delete') {
           await api.delete(`/tasks/${entityId}`)
@@ -920,6 +1720,8 @@ export const useTaskStore = defineStore('task', {
         sortOrder: taskData.sortOrder || this.getNextSortOrder(taskData.parentId),
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
+        version: 1, // Initial version
+        lastModifiedBy: this.currentUser?.id || 'unknown',
         _isTemp: true,
       }
 
@@ -1004,7 +1806,13 @@ export const useTaskStore = defineStore('task', {
 
       // 用 map 產生新陣列，保證反應式
       this.tasks = this.tasks.map((task, i) =>
-        i === index ? { ...originalTask, ...updates, updatedAt: new Date().toISOString() } : task,
+        i === index ? { 
+          ...originalTask, 
+          ...updates, 
+          updatedAt: new Date().toISOString(),
+          version: (originalTask.version || 1) + 1, // Increment version
+          lastModifiedBy: this.currentUser?.id || 'unknown',
+        } : task,
       )
 
       console.log(this.tasks[index])
