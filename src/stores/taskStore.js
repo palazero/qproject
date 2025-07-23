@@ -74,15 +74,33 @@ export const useTaskStore = defineStore('task', {
     // Backend integration state
     isOnline: navigator.onLine,
     syncStatus: 'idle', // 'idle', 'syncing', 'error'
-    pendingActions: [], // 離線時的待同步操作
-    currentUser: null,
+    
+    // Enhanced sync queue system
+    syncQueue: [], // New structured sync queue
+    pendingActions: [], // Legacy - will be phased out
+    
+    // Socket connection state
     socket: null,
+    socketConnected: false,
+    socketReconnectAttempts: 0,
+    socketMaxReconnectAttempts: 3,
+    socketReconnectTimer: null,
+    socketReconnectDelay: 1000, // Start with 1 second
+    
+    // Authentication
+    currentUser: null,
     authToken: localStorage.getItem('auth_token'),
-    // Initialize currentProjectId from localStorage immediately
+    
+    // Project context
     currentProjectId: localStorage.getItem('current_project_id') || null,
 
-    // Debounce timer for drag and drop sync
+    // Sync timers
     dragSyncTimer: null,
+    syncRetryTimer: null,
+    
+    // Network monitoring
+    networkStatusTimer: null,
+    lastOnlineCheck: null,
   }),
 
   getters: {
@@ -341,10 +359,41 @@ export const useTaskStore = defineStore('task', {
 
       return { data, links }
     },
+
+    // Sync status getters
+    syncQueueCount: (state) => state.syncQueue.length,
+    
+    pendingSyncOperations: (state) => {
+      return state.syncQueue.filter(item => item.status === 'pending')
+    },
+    
+    failedSyncOperations: (state) => {
+      return state.syncQueue.filter(item => item.status === 'failed')
+    },
+    
+    syncInProgress: (state) => {
+      return state.syncQueue.some(item => item.status === 'syncing')
+    },
+    
+    connectionStatus: (state) => {
+      if (state.socketConnected && state.isOnline) return 'connected'
+      if (state.isOnline) return 'reconnecting'
+      return 'offline'
+    },
+
+    syncStatusText: (state, getters) => {
+      const pendingCount = getters.pendingSyncOperations.length
+      const failedCount = getters.failedSyncOperations.length
+      
+      if (getters.syncInProgress) return '同步中...'
+      if (failedCount > 0) return `${failedCount} 項失敗`
+      if (pendingCount > 0) return `${pendingCount} 項待同步`
+      return '已同步'
+    },
   },
 
   actions: {
-    // Initialize backend connection
+    // Initialize backend connection with enhanced socket management
     async initializeBackend(projectId, userToken) {
       this.currentProjectId = projectId
       this.authToken = userToken
@@ -353,30 +402,9 @@ export const useTaskStore = defineStore('task', {
         localStorage.setItem('auth_token', userToken)
       }
 
-      // Initialize Socket.io
+      // Initialize Socket.io with auto-reconnection
       if (userToken) {
-        this.socket = io(
-          process.env.VUE_APP_API_URL?.replace('/api', '') || 'http://localhost:3000',
-          {
-            auth: { token: userToken },
-          },
-        )
-
-        this.socket.on('connect', () => {
-          this.isOnline = true
-          if (projectId) {
-            this.socket.emit('join:project', projectId)
-          }
-          this.syncPendingActions()
-        })
-
-        this.socket.on('task:sync', (event) => {
-          this.handleRealtimeSync(event)
-        })
-
-        this.socket.on('disconnect', () => {
-          this.isOnline = false
-        })
+        this.initializeSocket()
       }
 
       // Load initial data
@@ -386,6 +414,137 @@ export const useTaskStore = defineStore('task', {
 
       // Monitor network status
       this.initializeNetworkMonitoring()
+    },
+
+    // Enhanced socket initialization with reconnection logic
+    initializeSocket() {
+      if (this.socket) {
+        this.socket.disconnect()
+      }
+
+      this.socket = io(
+        process.env.VUE_APP_API_URL?.replace('/api', '') || 'http://localhost:3000',
+        {
+          auth: { token: this.authToken },
+          autoConnect: true,
+          reconnection: false, // We'll handle reconnection manually
+          timeout: 10000,
+        },
+      )
+
+      // Connection successful
+      this.socket.on('connect', () => {
+        console.log('Socket connected successfully')
+        this.socketConnected = true
+        this.isOnline = true
+        this.socketReconnectAttempts = 0
+        this.socketReconnectDelay = 1000 // Reset delay
+        
+        // Clear any pending reconnection timer
+        if (this.socketReconnectTimer) {
+          clearTimeout(this.socketReconnectTimer)
+          this.socketReconnectTimer = null
+        }
+
+        // Join current project room
+        if (this.currentProjectId) {
+          this.socket.emit('join:project', this.currentProjectId)
+        }
+
+        // Process sync queue
+        this.processSyncQueue()
+      })
+
+      // Handle real-time updates
+      this.socket.on('task:sync', (event) => {
+        this.handleRealtimeSync(event)
+      })
+
+      // Connection lost
+      this.socket.on('disconnect', (reason) => {
+        console.log('Socket disconnected:', reason)
+        this.socketConnected = false
+        
+        // Only attempt reconnection if not manually disconnected
+        if (reason !== 'io client disconnect') {
+          this.attemptSocketReconnection()
+        }
+      })
+
+      // Connection error
+      this.socket.on('connect_error', (error) => {
+        console.error('Socket connection error:', error)
+        this.socketConnected = false
+        this.attemptSocketReconnection()
+      })
+
+      // Authentication error
+      this.socket.on('auth_error', (error) => {
+        console.error('Socket authentication error:', error)
+        this.socketConnected = false
+        // Don't retry on auth errors
+        Notify.create({
+          type: 'negative',
+          message: '認證失敗，請重新登入',
+          position: 'top',
+        })
+      })
+    },
+
+    // Smart socket reconnection with exponential backoff
+    attemptSocketReconnection() {
+      // Don't attempt if already trying to reconnect
+      if (this.socketReconnectTimer) {
+        return
+      }
+
+      // Check if we've exceeded max attempts
+      if (this.socketReconnectAttempts >= this.socketMaxReconnectAttempts) {
+        console.log('Max socket reconnection attempts reached, waiting 1 hour')
+        
+        // Wait 1 hour before trying again
+        this.socketReconnectTimer = setTimeout(() => {
+          this.socketReconnectAttempts = 0
+          this.socketReconnectDelay = 1000
+          this.socketReconnectTimer = null
+          this.attemptSocketReconnection()
+        }, 60 * 60 * 1000) // 1 hour
+        
+        return
+      }
+
+      console.log(`Attempting socket reconnection in ${this.socketReconnectDelay}ms (attempt ${this.socketReconnectAttempts + 1}/${this.socketMaxReconnectAttempts})`)
+
+      this.socketReconnectTimer = setTimeout(() => {
+        this.socketReconnectAttempts++
+        this.socketReconnectTimer = null
+        
+        // Try to reconnect
+        if (this.socket) {
+          this.socket.connect()
+        } else {
+          this.initializeSocket()
+        }
+        
+        // Increase delay for next attempt (exponential backoff)
+        this.socketReconnectDelay = Math.min(this.socketReconnectDelay * 2, 30000) // Max 30 seconds
+      }, this.socketReconnectDelay)
+    },
+
+    // Cleanup socket connection
+    disconnectSocket() {
+      if (this.socketReconnectTimer) {
+        clearTimeout(this.socketReconnectTimer)
+        this.socketReconnectTimer = null
+      }
+      
+      if (this.socket) {
+        this.socket.disconnect()
+        this.socket = null
+      }
+      
+      this.socketConnected = false
+      this.socketReconnectAttempts = 0
     },
 
     // Load tasks from server
@@ -516,55 +675,217 @@ export const useTaskStore = defineStore('task', {
       this.updateTaskLinks()
     },
 
-    // Sync pending actions
-    async syncPendingActions() {
-      if (!this.isOnline || this.pendingActions.length === 0) return
-
-      const actionsToSync = [...this.pendingActions]
-      this.pendingActions = []
-
-      for (const action of actionsToSync) {
-        try {
-          await this.executeSyncAction(action)
-        } catch (error) {
-          this.pendingActions.push(action)
-          setTimeout(() => {
-            Notify.create({
-              type: 'negative',
-              message: `同步操作失敗，已加入待同步佇列: ${error.message}`,
-              position: 'top',
-            })
-          }, 0)
-        }
+    // Enhanced sync queue processing with retry logic
+    async processSyncQueue() {
+      if (!this.socketConnected || !this.isOnline) {
+        return
       }
 
-      if (actionsToSync.length > 0) {
-        await this.loadTasksFromServer()
+      const pendingItems = this.syncQueue.filter(item => 
+        item.status === 'pending' || item.status === 'failed'
+      )
+
+      if (pendingItems.length === 0) {
+        return
+      }
+
+      console.log(`Processing ${pendingItems.length} items in sync queue`)
+
+      for (const item of pendingItems) {
+        // Skip if item is currently syncing
+        if (item.status === 'syncing') {
+          continue
+        }
+
+        // Check if we should retry failed items
+        if (item.status === 'failed') {
+          const timeSinceLastAttempt = Date.now() - new Date(item.lastAttempt).getTime()
+          const minRetryDelay = this.calculateRetryDelay(item.retryCount)
+          
+          if (timeSinceLastAttempt < minRetryDelay) {
+            continue // Not time to retry yet
+          }
+        }
+
+        // Process the item
+        await this.processSyncItem(item)
       }
     },
 
-    // Execute sync action
-    async executeSyncAction(action) {
-      if (action.type === 'create') {
-        // Backend now uses camelCase, no conversion needed
-        const backendTaskData = {
-          ...action.data,
-          projectId: this.currentProjectId,
+    // Process individual sync queue item
+    async processSyncItem(item) {
+      // Mark as syncing
+      item.status = 'syncing'
+      item.lastAttempt = new Date().toISOString()
+
+      try {
+        await this.executeSyncAction(item)
+        
+        // Success - remove from queue
+        this.removeSyncQueueItem(item.id)
+        console.log(`Successfully synced: ${item.action} ${item.entity}`)
+        
+      } catch (error) {
+        console.error(`Sync failed for ${item.action} ${item.entity}:`, error)
+        
+        // Increment retry count
+        item.retryCount = (item.retryCount || 0) + 1
+        item.lastError = error.message
+        
+        // Check if we should keep retrying
+        if (item.retryCount >= 5) {
+          item.status = 'failed'
+          
+          // Notify user of permanent failure
+          setTimeout(() => {
+            Notify.create({
+              type: 'negative',
+              message: `操作同步失敗：${item.action} ${item.entity}`,
+              position: 'top',
+              actions: [
+                {
+                  label: '重試',
+                  color: 'white',
+                  handler: () => {
+                    item.retryCount = 0
+                    item.status = 'pending'
+                    this.processSyncQueue()
+                  }
+                }
+              ]
+            })
+          }, 0)
+        } else {
+          item.status = 'failed'
+          
+          // Schedule retry
+          const retryDelay = this.calculateRetryDelay(item.retryCount)
+          setTimeout(() => {
+            if (item.status === 'failed') {
+              item.status = 'pending'
+              this.processSyncQueue()
+            }
+          }, retryDelay)
         }
+      }
+    },
 
-        await api.post('/tasks', backendTaskData)
+    // Calculate exponential backoff delay
+    calculateRetryDelay(retryCount) {
+      // Start with 1 second, double each time, max 30 seconds
+      return Math.min(1000 * Math.pow(2, retryCount), 30000)
+    },
 
-        // Replace temp task
-        this.tasks = this.tasks.filter((t) => t.id !== action.tempId)
-      } else if (action.type === 'update') {
-        // Backend now uses camelCase, no conversion needed
-        const backendUpdates = {
-          ...action.data,
+    // Add item to sync queue
+    addToSyncQueue(action, entity, data, options = {}) {
+      const queueItem = {
+        id: uuidv4(),
+        action, // 'create', 'update', 'delete'
+        entity, // 'task', 'project'
+        data,
+        status: 'pending',
+        createdAt: new Date().toISOString(),
+        lastAttempt: null,
+        retryCount: 0,
+        lastError: null,
+        priority: options.priority || 'normal', // 'high', 'normal', 'low'
+        ...options
+      }
+
+      this.syncQueue.push(queueItem)
+      
+      // Sort by priority and creation time
+      this.syncQueue.sort((a, b) => {
+        const priorityOrder = { high: 3, normal: 2, low: 1 }
+        const aPriority = priorityOrder[a.priority] || 2
+        const bPriority = priorityOrder[b.priority] || 2
+        
+        if (aPriority !== bPriority) {
+          return bPriority - aPriority // High priority first
         }
+        
+        return new Date(a.createdAt) - new Date(b.createdAt) // Older first
+      })
 
-        await api.put(`/tasks/${action.taskId}`, backendUpdates)
-      } else if (action.type === 'delete') {
-        await api.delete(`/tasks/${action.taskId}`)
+      // Trigger immediate processing if connected
+      if (this.socketConnected && this.isOnline) {
+        this.processSyncQueue()
+      }
+
+      return queueItem.id
+    },
+
+    // Remove item from sync queue
+    removeSyncQueueItem(itemId) {
+      this.syncQueue = this.syncQueue.filter(item => item.id !== itemId)
+    },
+
+    // Clear all failed items from queue
+    clearFailedSyncItems() {
+      this.syncQueue = this.syncQueue.filter(item => item.status !== 'failed')
+    },
+
+    // Retry all failed items
+    retryFailedSyncItems() {
+      this.syncQueue.forEach(item => {
+        if (item.status === 'failed') {
+          item.retryCount = 0
+          item.status = 'pending'
+          item.lastError = null
+        }
+      })
+      
+      this.processSyncQueue()
+    },
+
+    // Legacy sync pending actions (for backward compatibility)
+    async syncPendingActions() {
+      return this.processSyncQueue()
+    },
+
+    // Execute sync action (enhanced to support both old and new formats)
+    async executeSyncAction(item) {
+      // Support both old pendingActions format and new syncQueue format
+      const action = item.action || item.type
+      const entity = item.entity || 'task'
+      const data = item.data
+      const entityId = item.entityId || item.taskId
+
+      if (entity === 'task') {
+        if (action === 'create') {
+          const taskData = {
+            ...data,
+            projectId: this.currentProjectId,
+          }
+
+          const response = await api.post('/tasks', taskData)
+          
+          // If this was a temp task, replace it with server response
+          if (item.tempId) {
+            const index = this.tasks.findIndex((t) => t.id === item.tempId)
+            if (index !== -1 && response.data.task) {
+              this.tasks[index] = {
+                ...response.data.task,
+                _isTemp: false,
+              }
+            }
+          }
+          
+        } else if (action === 'update') {
+          await api.put(`/tasks/${entityId}`, data)
+          
+        } else if (action === 'delete') {
+          await api.delete(`/tasks/${entityId}`)
+        }
+        
+      } else if (entity === 'project') {
+        if (action === 'create') {
+          await api.post('/projects', data)
+        } else if (action === 'update') {
+          await api.put(`/projects/${entityId}`, data)
+        } else if (action === 'delete') {
+          await api.delete(`/projects/${entityId}`)
+        }
       }
     },
 
@@ -628,24 +949,16 @@ export const useTaskStore = defineStore('task', {
             }
           }
         } catch (error) {
-          this.pendingActions.push({
-            type: 'create',
-            data: taskData,
+          this.addToSyncQueue('create', 'task', taskData, { 
             tempId,
+            priority: 'high' 
           })
-          setTimeout(() => {
-            Notify.create({
-              type: 'negative',
-              message: `建立任務失敗，已加入待同步佇列: ${error.message}`,
-              position: 'top',
-            })
-          }, 0)
+          console.warn('Task creation failed, added to sync queue:', error)
         }
       } else {
-        this.pendingActions.push({
-          type: 'create',
-          data: taskData,
+        this.addToSyncQueue('create', 'task', taskData, { 
           tempId,
+          priority: 'high' 
         })
       }
 
